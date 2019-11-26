@@ -8,11 +8,6 @@ import json
 import random
 import socket, socketserver, ssl
 
-def get_loadavg():
-        with open('/proc/loadavg') as fh:
-            try: return float(fh.readline().split()[0])
-            except Exception as e: self.logger.warning(e,exc_info=True)
-
 
 class RequestHandler(socketserver.StreamRequestHandler):
     '''control socket request handler'''
@@ -56,11 +51,10 @@ class State(threading.Thread):
         threading.Thread.__init__(self,daemon=True,name=self.__name+'.State',target=self.state_run)
         self.logger=logging.getLogger(self.name)
 
-        self.__lock=threading.Lock()
         self.shutdown=threading.Event()
 
-        self.__refresh=refresh
-        self.__expire=expire
+        self.refresh=refresh
+        self.expire=expire
     
         '''state is:
             __jobs: { jid: {pool: node: ts: state: [jobargs...] }} }
@@ -70,11 +64,9 @@ class State(threading.Thread):
             node: the node the job is assigned to
             state: the job state
         '''
-
+        self.__lock=threading.Lock() #lock on __jobs dict
         self.__jobs={} #(partial) cluster job state, this is private because we lock during any changes
-    
-        self.pool_nodes={} #map of pool:nodeset for nodes we connect downstream to
-
+        self.pool_status={} #map of [pool][node][open slots] for nodes we connect downstream to
         self.node_status={} #map of node:last status
 
         self.start()
@@ -83,9 +75,9 @@ class State(threading.Thread):
         #dump all state for a node/pool/or updated after a certain ts
         with self.__lock:
             try: 
-                return dict((jid,job) for (jid,job) in self.__jobs.items() if \
-                    (   (not node or job['node']==node) or \
-                        (not pool or job['pool']==pool) or \
+                return dict((jid,job.copy()) for (jid,job) in self.__jobs.items() if \
+                    (   (not node or job['node']==node) and \
+                        (not pool or job['pool']==pool) and \
                         (not ts or job['ts']>ts) )
                 )
             except Exception as e: self.logger.warning(e,exc_info=True)
@@ -99,17 +91,16 @@ class State(threading.Thread):
                 for jid,job in jobs.items():
                     ts=job['ts']
                     if jid not in self.__jobs or self.__jobs[jid]['ts'] <= ts: 
-                        self.logger.debug ('updating %s %s'%(jid,job))
                         self.__jobs.setdefault(jid,{}).update(job)
                         updated[jid]=self.__jobs[jid]
-            except Exception as e: self.__logging.warning(e,exc_info=True)
-        #update node status and pool routing
+            except Exception as e: self.logger.warning(e,exc_info=True)
+        #update node status and pool availabiliy
         try:
             for node,node_status in status.items():
                 self.node_status.setdefault(node,{}).update(online=True,ts=time.time(),**node_status)
-                for pool in node_status.get('pools',[]):
-                    self.pool_nodes.setdefault(pool,set()).add(node)
-        except Exception as e: self.__logging.warning(e,exc_info=True)
+                for pool,slots in node_status.get('pools',{}).items():
+                    self.pool_status.setdefault(pool,{})[node]=slots
+        except Exception as e: self.logger.warning(e,exc_info=True)
         #return updated items
         return updated
 
@@ -117,7 +108,7 @@ class State(threading.Thread):
         #get job by ID
         with self.__lock:
             try:
-                return self.__jobs.get(jid)
+                return self.__jobs.get(jid).copy()
             except Exception as e: self.logger.warning(e,exc_info=True)
     
     def update_job(self,jid,**data):
@@ -143,7 +134,7 @@ class State(threading.Thread):
                                     'pool':None,                #pool to run in 
                                     'nodelist':[],        #list of nodes allowed to handle this job
                                     'node':self.__name,         #node job is currently on
-                                    'restart_on_exit':False,
+                                    'restart_on_done':False,
                                     'restart_on_fail':False,
                                     'state':'new' }             #job state
                 self.__jobs[jid].update(jobargs)
@@ -157,55 +148,63 @@ class State(threading.Thread):
             with self.__lock:
                 try:
                     for jid,job in self.__jobs.copy().items():
-                        if time.time()-job['ts'] > self.__expire: 
+                        if time.time()-job['ts'] > self.expire: 
                             #jobs that have ended for some reason will no longer be updated, so expire them.
                             if job['state'] in  ['done','killed','failed']:
                                 self.logger.debug('expiring job %s'%jid)
                                 del self.__jobs[jid]
                             else: 
                                 #this job *should* have been updated, assume it has failed
-                                self.logger.warning('job %s not updated in %s seconds'%(jid,self__expire))
-                                job.update(ts=time.time(),state='failed')
+                                self.logger.warning('job %s not updated in %s seconds'%(jid,self.expire))
+                                self.__jobs[jid].update(ts=time.time(),state='failed')
+                                #if we restart on fail and have a nodelist
+                                if job['restart_on_fail'] and job['nodelist']:
+                                    # try kicking it back to the first node for rescheduling
+                                    self.__jobs[jid].update(node=job['nodelist'][0])
+
                 except Exception as e: self.logger.warning(e,exc_info=True)
             #set nodes that have not sent status to offline
             for node,node_status in self.node_status.items():
-                if node_status['online'] and time.time()-node_status['ts'] > self.__expire:
-                    self.logger.warning('node %s not updated in %s seconds'%(node,self__expire))
+                if node_status['online'] and time.time()-node_status['ts'] > self.expire:
+                    self.logger.warning('node %s not updated in %s seconds'%(node,self.expire))
                     node_status.update(online=False)
-            time.sleep(self.__refresh)
+            time.sleep(self.refresh)
 
 class Node(threading.Thread):
     '''node poller/state sync thread
     initially we try to push all state to the node (sync_ts of 0)'''
-    def __init__(self,name,state,refresh=1,address=None,port=int('c137',16),timeout=10,**cfg):
+    def __init__(self,name,state,refresh=1,address=None,port=13700,timeout=10,**cfg):
         self.__name=name
-        self.__state=state
+        self.state=state
         threading.Thread.__init__(self,daemon=True,name='Node.'+self.__name,target=self.node_run)
         self.logger=logging.getLogger(self.name)
-        self.__address=address
-        if not self.__address: self.__address=self.__name
+        self.address=address
+        if not self.address: self.address=self.__name
         self.__port=port
-        self.__timeout=timeout
-        self.__refresh=refresh
+        self.timeout=timeout
+        self.refresh=refresh
         self.__socket=None
-        self.__cfg=cfg
+        self.cfg=cfg
         self.shutdown=threading.Event()
         self.start()
 
     def __sr(self,requests):
         #conected and send/recieve request/response
         if not self.__socket:
-                self.logger.debug('connecting to %s:%s'%(self.__address,self.__port))
-                try: 
-                    self.__socket=socket.create_connection((self.__address,self.__port),timeout=self.__timeout)
-                    sslcfg=self.__cfg.get('ssl')
-                    if sslcfg:
-                        self.__socket = ssl.wrap_socket(self.__socket,
-                            certfile = sslcfg.get('certfile'),
-                            keyfile = sslcfg.get('keyfile'),
-                            ca_certs = sslcfg.get('ca_certs') )
-                except Exception as e:
-                    self.logger.warning("%s:%s %s"%(self.__address,self.__port,e))
+            self.logger.debug('connecting to %s:%s'%(self.address,self.__port))
+            try: 
+                self.__socket=socket.create_connection((self.address,self.__port),timeout=self.timeout)
+                sslcfg=self.cfg.get('ssl')
+                if sslcfg:
+                    self.__socket = ssl.wrap_socket(self.__socket,
+                        certfile = sslcfg.get('certfile'),
+                        keyfile = sslcfg.get('keyfile'),
+                        ca_certs = sslcfg.get('ca_certs') )
+            except Exception as e:
+                if self.__socket is not False:
+                    self.logger.warning("%s:%s %s"%(self.address,self.__port,e))
+                    self.__socket=False #suppress repeated warnings
+            if self.__socket: self.logger.info('connected to %s:%s'%(self.address,self.__port))
         if self.__socket:
             try:
                 self.__socket.sendall(json.dumps(requests).encode())
@@ -223,92 +222,124 @@ class Node(threading.Thread):
     def node_run(self):
         ts=None #timestamp of the last sync
         while not self.shutdown.is_set():
-            time.sleep(self.__refresh)
+            time.sleep(self.refresh)
             request={
                 'status':{},
                 #dump all jobs for this node updated more recently than the last sync
-                'sync':self.__state.get(node=self.__name,ts=ts),
+                'sync':self.state.get(node=self.__name,ts=ts),
                 'get':{}
             }
+            if request['sync']: self.logger.debug('outgoing sync sent %s'%len(request['sync']))
             if ts: request['get'].update(ts=ts)
             ts=time.time()
-            self.logger.debug('sent %s'%request)
             responses=self.__sr([request])
             if responses:
                 response=responses[0]
-                self.logger.debug('got %s'%response)
-                self.__state.sync(
-                    response.get('jobs',{}),
+                updated=self.state.sync(
+                    response.get('get',{}),
                     {self.__name:response.get('status',{})}
                 )
+            if updated: self.logger.debug('incoming sync updated %s'%len(updated))
         if self.__socket:self.__socket.close()
 
 
 class Pool(threading.Thread):
-
-    def __init__(self,node,pool,state,refresh=1,max_jobs=None):
+    '''job queue manager'''
+    def __init__(self,node,pool,state,refresh=1,update=10,slots=None):
         self.__node=node
         self.__pool=pool
-        self.__state=state
-        self.__refresh=refresh
-        self.max_jobs=max_jobs
+        self.state=state
+        self.refresh=refresh #how often we update the job q
+        self.update=update #how often we update the state of running/waiting jobs
+        self.slots=slots
         threading.Thread.__init__(self,daemon=True,name='Pool.'+self.__pool,target=self.pool_run)
         self.logger=logging.getLogger(self.name)
         self.shutdown=threading.Event()
         self.start()
         self.__running={} #map of job_id -> subprocess object
 
+    def available(self):
+        #returns how many slots are available or None if not set
+        if not self.slots: return None
+        else: return self.slots-len(self.__running)
+
     def start_job(self,jid):
-        job=self.__state.get_job(jid)
+        job=self.state.get_job(jid)
         try: 
             self.__running[jid]=subprocess.Popen([job.get('cmd')]+job.get('args',[]))
-            self.__state.update_job(jid,
+            pid=self.__running[jid].pid
+            self.state.update_job(jid,
                 state='running',
                 start_ts=time.time(),
-                pid=self.__running[jid].pid
+                pid=pid
             )
+            self.logger.info('job %s started [%s]'%(jid,pid))
         except Exception as e:
             self.logger.warning(e,exc_info=True)
-            self.__state.update_job(jid,state='failed',error=str(e))
+            self.state.update_job(jid,state='failed',error=str(e))
     
     def kill_job(self,jid):
+        job=self.state.get_job(jid)
+        self.logger.info('killed job %s [%s]'%(jid,job['pid']))
         self.__running[jid].kill()
-        self.__state.update_job(jid,state='killed',end_ts=time.time())
+        self.state.update_job(jid,state='killed',end_ts=time.time())
         del self.__running[jid]
 
     def check_job(self,jid):
+        job=self.state.get_job(jid)
         rc=self.__running[jid].poll()
         if rc is not None:
             if rc == 0: state='done'
             else: state='failed'
-            self.__state.update_job(jid,state=state,end_ts=time.time(),rc=rc)
+            self.state.update_job(jid,state=state,end_ts=time.time(),rc=rc)
+            self.logger.info("job %s %s (%s)"%(jid,state,rc))
             del self.__running[jid]
+        #was job killed or max runtime
+        elif job.get('max_runtime') and (time.time()-job['start_ts'] > job['max_runtime']):
+            self.logger.warning('job %s exceeded max runtime of %s'%(jid,job['max_runtime']))
+            self.kill_job(jid)
 
     def pool_run(self):
         while not self.shutdown.is_set():
             try:
-                #get jobs assigned to us
-                pool_jobs=self.__state.get(node=self.__node,pool=self.__pool)
+                #get jobs assigned to this node and pool
+                pool_jobs=self.state.get(node=self.__node,pool=self.__pool)
                 for jid,job in pool_jobs.items():
                     #check running jobs
                     if jid in self.__running:
                         if job['state'] == 'killed': self.kill_job(jid)
                         else: self.check_job(jid)
+                    #update queued/running jobs
+                    if (job['state'] == 'running' or job['state'] == 'waiting') \
+                        and (time.time()-job['ts'] > self.update):
+                            self.state.update_job(jid) #touch it so it doesn't expire
                     #check to see if we can start a job
-                    elif job['state'] == 'new' \
-                        or (job['state'] == 'done' and job['restart_on_exit']) \
+                    elif job['state'] == 'new' or job['state'] == 'waiting' \
+                        or (job['state'] == 'done' and job['restart_on_done']) \
                         or (job['state'] == 'failed' and job['restart_on_fail']):
-                            if (not self.max_jobs) or (len(self.__running) < self.max_jobs): 
-                                self.start_job(jid)
+                            if (not self.slots) or (len(self.__running) < self.slots): self.start_job(jid)
+                            #job is waiting for a slot
+                            elif job['state'] != 'waiting': self.state.update_job(jid,state='waiting')
             except Exception as e: self.logger.error(e,exc_info=True)
-            time.sleep(self.__refresh)
+            time.sleep(self.refresh)
 
         #at shutdown, kill all jobs
         for jid in self.__running.keys(): self.kill_job(jid)
-                
 
 
+def get_loadavg():
+        with open('/proc/loadavg') as fh:
+            try: return float(fh.readline().split()[0])
+            except Exception as e: self.logger.warning(e,exc_info=True)
 
+def biased_random(l,reverse=False):
+    #this is probably a stupid way to pick a random item while favoring the lowest sorted items 
+    #first we pick a range between the first item and a randomly selected item
+    #them we pick a random item from that range
+    if l: 
+        l=sorted(l,reverse=reverse)
+        if len(l) > 1: return random.choice( l[ :random.randint(1,len(l)) ] )[1]
+        else: return l[0] #only one item...
 
 class Main:
     '''meeseeks box main thread'''
@@ -331,7 +362,7 @@ class Main:
         listencfg=self.defaults.copy()
         listencfg.update(cfg.get('listen',{})) #merge in listener specifc options
         self.listener=RequestListener( (  listencfg.get('address','localhost'),
-                                            listencfg.get('port',int('c137',16))   ), 
+                                            listencfg.get('port',13700)   ), 
                             RequestHandler)
         self.listener.cfg=listencfg #for passing ssl params and other options
         self.listener.handler=self
@@ -363,7 +394,7 @@ class Main:
 
     #handle incoming request
     def handle(self,request):
-        self.logger.debug(request)
+        #self.logger.debug(request)
         response={}
         #we're being pushed state from upstream node and should return ours
         if 'sync' in request:
@@ -371,13 +402,17 @@ class Main:
             response['sync']=self.state.sync(request['sync'])
             #return our state if asked 
             if 'get' in request:
-                #reply with anything newer than the upstream ts
-                response['sync']=self.state.get(request['get'])
+                #reply with our jobs state
+                response['get']=self.state.get(**request['get'])
         #submit job
         if 'submit' in request: 
             response['submit']=self.state.add_job(**request['submit'])
         #query job
         if 'query' in request: response['query']=self.state.get_job(request['query'])
+          #modify job
+        if 'modify' in request:
+            for jid,data in request['modify'].items():
+                response['modify'][jid]=self.state.update_job(jid,**data)
         #kill job
         if 'kill' in request:
                 self.state.kill_job(request['kill'])
@@ -387,51 +422,61 @@ class Main:
             response['status']={     
                 #return the load average       
                 'loadavg':get_loadavg(),
-                #return the union of the pools we service and the pools we can forward to
-                'pools':list( set(self.pools.keys()).union(self.state.pool_nodes.keys()) )
+                #get the pools we can forward to
+                'pools':dict((p,None) for p in self.state.pool_status.keys())
             }
+            #add in the pools we service and the slots available
+            for p,pool in self.pools.items(): response['status']['pools'][p]=pool.available()
         return response
 
+    def select_by_loadavg(self,nodes):
+        #loadvg,node sorted low to high
+        nodes=[ (self.state.node_status[node].get('loadavg'), node) for node in nodes \
+            if self.state.node_status[node].get('loadavg') is not None ] 
+        #do we have any valid load averages?
+        if nodes: return biased_random(nodes)
+        #if we have no valid load averages, pick a random node from the pool
+        else: return random.choice( [node for node in nodes if \
+            self.state.node_status[node].get('loadavg') is None] )
     
+    def select_by_slots(self,pool,nodes):
+        #get nodes in this pool sorted from most to least open slots
+        nodes=sorted( [ (self.state.pool_status[pool][node], node) for node in nodes \
+            if self.state.pool_status[pool][node] is not None ], reverse=True)
+        #do we have any nodes with pool slots?
+        if nodes: return biased_random(nodes,reverse=True)
+        #if not, pick a random node from the pool
+        else: return random.choice( [node for node in nodes if self.state.pool_status[pool][node] is None] )
+
     def run(self):
         self.logger.info('node %s running'%self.name)
 
         while True:
-
             #job routing logic
             try:
                 #get jobs assigned to us
                 for jid,job in self.state.get(node=self.name).items():
-                    #if we can service this job, the Pool thread will claim the job so do nothing
+                    #if we can service this job, the pool thread will claim the job so do nothing
                     if job['pool'] not in self.pools: 
                         try:
-                            #we need to forward to a node that has the job's pool
-                            pool_nodes=self.__state.pool_nodes[job['pool']]
+                            #we need to forward to an online node that has the job's pool
+                            nodes=[ node for node in self.state.pool_status[job['pool']].keys() \
+                                if self.state.node_status[node].get('online') ]
 
                             #filter by the job's nodelist if set
                             if job['nodelist']: 
-                                allowed_nodes=pool_nodes.intersection(job['nodelist'])
+                                in_list_nodes=[node for node in nodes if node in job['nodelist']]
                                 #if we got a result, use that else all pool nodes
                                 #we may not if the nodelist only controlled the upstream routing
                                 #so if we got nothing based on the node list use all pool nodes
-                                if allowed_nodes: pool_nodes=allowed_nodes
+                                if in_list_nodes: nodes=in_list_nodes
 
-                            #loadvg,node sorted low to high if node is available
-                            node_loadavgs=sorted([
-                                (self.state.node_status[node].get('loadavg',0.0), node) \
-                                    for node in pool_nodes \
-                                        if self.state.node_status[node].get('online')
-                                ])
-                            self.logger.debug(node_loadavg)
-                            #this is a stupid way to pick a random node while favoring the nodes with the lowest load
-                            #first we pick a range between the lowest and a randomly selected higher node
-                            #then we pick a random node from that range
-                            node=random.choice( node_loadavgs[ 0:random.randrange(0,len(node_loadavgs)) ] )[1]
-
-                            #and we assign to that node, which will either run the job or use the same logic to forward it
+                            if self.defaults.get('use_loadavg'): node=self.select_by_loadavg(nodes)
+                            else: node=self.select_by_slots(job['pool'],nodes)
+                        
                             self.state.update_job(jid,node=node)
-                            self.logger.debug(job)
-
+                            self.logger.debug('routing %s to %s'%(jid,node))
+                            
                         except Exception as e: self.logger.warning(e,exc_info=True)
             
                 time.sleep(self.defaults.get('refresh',1))
@@ -463,9 +508,9 @@ class Main:
 
 if __name__ == '__main__':
 
+    cfg={} 
     from configparser import ConfigParser
     parser=ConfigParser()
-    cfg={'nodes':{},'pools':{}}
     for f in sys.argv[1:]: 
         try:
             with open(f) as fh: cfg.update(json.load(fh))
