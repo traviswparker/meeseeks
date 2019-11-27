@@ -508,9 +508,7 @@ class Main:
 
 if __name__ == '__main__':
 
-    cfg={} 
-    from configparser import ConfigParser
-    parser=ConfigParser()
+    cfg={}
     for f in sys.argv[1:]: 
         try:
             with open(f) as fh: cfg.update(json.load(fh))
