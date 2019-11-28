@@ -11,6 +11,7 @@ $ meeseeks-box [config files..]
 # configuration 
 
 config files are JSON, some sample configs are included:
+
     examples/master.cfg
         this is how a master node would be configured
         it connects to the head nodes
@@ -22,13 +23,14 @@ config files are JSON, some sample configs are included:
     examples/node*.cfg
         these are cluster compute nodes
         they each have pools to process jobs
-
-    in these sample configs, the port number is being changed so all of them can run one one host
-    generally you don't change the port number, and run one meeseeks-box per host
+        
+in these sample configs, the port number is being changed so all of them can run one one host
+generally you don't change the port number, and run one meeseeks-box per host
 
 
 The config sections, objects, and defaults are as follows:
 {
+
     name: #sets the name of the node, defaults to the hostname if not set
     
     logging: {
@@ -72,21 +74,20 @@ The config sections, objects, and defaults are as follows:
 # JSON request format
 
  \n sends requests for processing.
- 
  \n\n disconnects client
 
-[ { "status" : {} 
-    fetch the cluster status this node knows about
-    response will be:
-    { 
-      "nodes": { nodename:{ ts:..., online:true|false, loadavg:....}, .... },
-      "pools": { poolname:{ nodename:slots_available|null, ... }, .... } 
+    [ { "status" : {} 
+        fetch the cluster status this node knows about
+        response will be:
+        { 
+          "nodes": { nodename:{ ts:..., online:true|false, loadavg:....}, .... },
+          "pools": { poolname:{ nodename:slots_available|null, ... }, .... } 
     } 
 
-  "submit" :{ 
-        "id": string , #job id, optional, MUST be unique. A UUID will be generated if id is omitted
-        "pool": string , #pool name, REQUIRED.
-        "cmd": [executable, arg, arg, arg] , #REQUIRED. the command to run and arguments. If subprocess.Popen likes it, it will work.
+      "submit" :{ 
+            "id": string , #job id, optional, MUST be unique. A UUID will be generated if id is omitted
+            "pool": string , #pool name, REQUIRED.
+            "cmd": [executable, arg, arg, arg] , #REQUIRED. the command to run and arguments. If subprocess.Popen likes it, it will work.
         "nodelist": [nodename, ... ], #optional. A list of preferred nodes to use. See Job Routing. 
         
         "stdout": false|true|path, #optional, path to file to use for the job's stdout, or true if stdout should be returned
@@ -100,17 +101,17 @@ The config sections, objects, and defaults are as follows:
                                           # these jobs will be failed. If restart_on_fail is set they will be retried once
                                           # if a nodelist is provided, the job will be reassigned to the first node in the list
                                           # else, the job will wait for the assigned node
-  }
-    response will be:
-    {
-        "submit": the job_id, or false if submission failed (no pool, or job_id exists) 
-    } 
+      }
+        response will be:
+        {
+            "submit": the job_id, or false if submission failed (no pool, or job_id exists) 
+        } 
 
-  "query": job_id
-    response will be job dict, or false if job_id does not exist
+      "query": job_id
+        response will be job dict, or false if job_id does not exist
 
-  "kill": job_id  #kills a job. 
-    response will be job dict, or false if job_id does not exist
+      "kill": job_id  #kills a job. 
+        response will be job dict, or false if job_id does not exist
 
-} ]
+    } ]
 
