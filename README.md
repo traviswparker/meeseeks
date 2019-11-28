@@ -6,7 +6,7 @@ The meeseeks-box agent runs on each node.
 Head, routing, compute, doesn't matter. It's all the same. 
 Just don't connect the nodes in cycles. 
 
-$ meeseeks-box [config files..]
+    $ meeseeks-box [config files..]
 
 # configuration 
 
