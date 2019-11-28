@@ -1,4 +1,4 @@
-# meeseeks: Submit jobs. It does them. Then it stops existing.
+# Submit jobs. It runs them. Then they stop existing.
 
 Knock yourselves out just keep your requests simple.
 
@@ -69,12 +69,17 @@ The config sections, objects, and defaults are as follows:
             refresh: 10 # how often in seconds the queue is scanned for new/finished jobs
             update: 60 # how often in seconds the state of running jobs is updated to prevent expiration
         } , ... }
-}
+    }
 
 # JSON request format
 
- \n sends requests for processing.
- \n\n disconnects client
+ connect with something like
+     
+     nc localhost 13700
+ 
+ and send JSON.
+ newline sends requests for processing.
+ double newline disconnects client.
 
     [ { "status" : {} 
         fetch the cluster status this node knows about
