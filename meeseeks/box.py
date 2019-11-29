@@ -122,7 +122,7 @@ class Box:
         #do we have any nodes with pool slots?
         if nodes_slots: 
             s,node=self.biased_random(nodes_slots,reverse=True)
-            if s > 0: self.state.set_pool_status(pool,node,s-1) #update the local free slot count
+            if s > 0: self.state.update_pool_status(pool,node,s-1) #update the local free slot count
             return node
         #if not, pick a random node from the pool
         else: return random.choice( nodes )
@@ -131,24 +131,12 @@ class Box:
         self.logger.info('running')
  
         while True: #existence is pain!
-            #these are the nodes we talk to
-            peers=list(self.nodes.keys()) 
             #update our node status
-            self.state.set_node_status( self.name,
+            self.state.update_node_status( self.name,
                 online=True,
                 ts=time.time(),
-                loadavg=self.get_loadavg(),
-                peers=peers )
+                loadavg=self.get_loadavg() )
 
-            #update our pool status for pools we don't have to show how many slots are free downstream
-            for pool in self.state.pool_status.keys():
-                if pool in self.pools: continue #we have this pool locally
-                slots=0
-                for peer in peers: #total up free slots downstream
-                    s=self.state.pool_status[pool].get(peer,None)
-                    if s: slots+=s
-                self.state.set_pool_status(pool,self.name,slots)
-    
             #job routing logic
             try:
                 #get jobs assigned to us
@@ -157,10 +145,9 @@ class Box:
                     #if we can service this job, the pool thread will claim the job so do nothing
                     if pool not in self.pools: 
                         try:
-                            #we need to forward to an online node that has the job's pool
-                            nodes=[ node for node in self.state.pool_status.get(pool,{}).keys() \
-                                if node in peers and self.state.node_status[node].get('online') ]
-                            if not nodes: continue #we can't do anything with this job yet
+                            #we need to select a node that has the job's pool
+                            nodes=list(self.state.pool_status.get(pool,{}).keys())
+                            if not nodes: continue #we can't do anything with this job
 
                             #filter by the job's nodelist if set
                             if job['nodelist']: 
@@ -233,9 +220,9 @@ class Box:
         #get cluster status
         if 'status' in request: 
             response['status']={     
-                #return the node status
+                #return the status of us and downstream nodes
                 'nodes':self.state.node_status,
-                #return the pool status
+                #return the  status of pools we know about
                 'pools':self.state.pool_status
             }
         return response

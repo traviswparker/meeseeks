@@ -59,15 +59,12 @@ class Node(threading.Thread):
     def node_run(self):
         while not self.shutdown.is_set():
             if not self.__socket: ts=0 #reset ts to push all state on reconnect
-
-            #we need to send updates that are for:
-            # the node we are connecting to
-            # nodes we know about but do not directly connect to
-            peers=self.state.node_status.get(self.node,{}).get('peers',[])
-            sync=dict( (jid,job) for (jid,job) in self.state.get(ts=ts).items() if \
-                    job['node'] != self.node and \
-                        ( job['node'] == self.remote_node or job['node'] not in peers ) 
-                )
+            
+            #we sync updates for all nodes that are routed through the remote node
+            sync=dict( (jid,job) for (jid,job) in self.state.get(ts=ts).items() \
+                        if job['node'] != self.node and job['node'] in \
+                        self.status.node_state.get(self.remote_node,{}).get('seen',[])
+                    )
             #create the request
             request={
                 'status':{},
@@ -81,8 +78,8 @@ class Node(threading.Thread):
                 response=responses[0]
                 updated=self.state.sync(
                     response.get('get',{}),
-                    response.get('status',{})
-                )
+                    response.get('status',{}),
+                    remote_node=self.remote_node)
             if responses: self.logger.debug('%s sent %s, updated %s'%(ts,len(sync),len(updated)))
             ts=time.time()-self.refresh #set the next window to go back to one refresh period ago
             time.sleep(self.refresh) 
