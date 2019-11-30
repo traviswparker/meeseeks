@@ -6,7 +6,9 @@ import threading
 import uuid
 import random
 import json
-import socket, socketserver, ssl
+import socket
+import socketserver
+import ssl
 
 from .state import State
 from .node import Node
@@ -231,4 +233,10 @@ class Box:
                 #return the  status of pools we know about
                 'pools':self.state.pool_status
             }
+
+        # Does not format nicely via netcat, because of newlines/tabs
+        if 'options' in request:
+            if 'pretty' in request['options'] and request['options']['pretty']:
+                response = json.dumps(response, sort_keys=True, indent=4)
+
         return response
