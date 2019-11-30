@@ -6,7 +6,7 @@ import logging
 
 class State(threading.Thread):
     '''cluster state handler'''
-    def __init__(self,node,refresh=10,expire=300):
+    def __init__(self,node,refresh=10,expire=60):
         self.node=node
         threading.Thread.__init__(self,daemon=True,name=self.node+'.State',target=self.state_run)
         self.logger=logging.getLogger(self.name)
@@ -31,8 +31,18 @@ class State(threading.Thread):
 
         self.start()
 
-    def set_node_status(self,node,**kwargs): self.node_status.setdefault(node,{}).update(**kwargs)
-    def set_pool_status(self,pool,node,slots): self.pool_status.setdefault(pool,{})[node]=slots
+    def update_pool_status(self,pool,node,slots): 
+        with self.__lock:
+            self.pool_status.setdefault(pool,{})[node]=slots
+
+    def update_node_status(self,node,**node_status): 
+        with self.__lock:
+            self.node_status.setdefault(node,{}).update(**node_status)
+            #take offline nodes out of the pools
+            if not node_status.get('online'):
+                for pool in self.pool_status.keys():
+                    if node in self.pool_status[pool]:
+                        del self.pool_status[pool][node]
 
     def get(self,node=None,pool=None,ts=None):
         #dump all state for a node/pool/or updated after a certain ts
@@ -46,7 +56,7 @@ class State(threading.Thread):
             except Exception as e: self.logger.warning(e,exc_info=True)
         return None
 
-    def sync(self,jobs={},status={}):
+    def sync(self,jobs={},status={},remote_node=None):
         #update local state with incoming state if job not in local state or job ts >= local jobs ts
         with self.__lock:
             updated=[]
@@ -56,12 +66,16 @@ class State(threading.Thread):
                         self.__jobs.setdefault(jid,{}).update(job)
                         updated.append(jid)
             except Exception as e: self.logger.warning(e,exc_info=True)
-        #update node status and pool availabiliy
+        #update our status from incoming status data
         try:
             for node,node_status in status.get('nodes',{}).items():
-                self.set_node_status(node,**node_status)
+                #for the node we are syncing from
+                #save the list of nodes it has seen
+                if remote_node and node==remote_node: 
+                    node_status['seen']=list(status['nodes'].keys())
+                self.update_node_status(node,**node_status)
             for pool,nodes in status.get('pools',{}).items():
-                for node,slots in nodes.items(): self.set_pool_status(pool,node,slots)
+                for node,slots in nodes.items(): self.update_pool_status(pool,node,slots)
         except Exception as e: self.logger.warning(e,exc_info=True)
         #return updated items
         return updated
@@ -108,8 +122,8 @@ class State(threading.Thread):
     def state_run(self):
         self.logger.info('started')
         while not self.shutdown.is_set():
-            self.logger.debug(self.node_status)
-            self.logger.debug(self.pool_status)
+            self.logger.debug('status %s'%self.node_status)
+            self.logger.debug('pools %s'%self.pool_status)
             #look for jobs that should have been updated
             with self.__lock:
                 try:
@@ -135,5 +149,6 @@ class State(threading.Thread):
             for node,node_status in self.node_status.items():
                 if node_status.get('online') and time.time()-node_status['ts'] > self.expire:
                     self.logger.warning('node %s not updated in %s seconds'%(node,self.expire))
-                    node_status.update(online=False)
+                    self.update_node_status(node,online=False)
+
             time.sleep(self.refresh)

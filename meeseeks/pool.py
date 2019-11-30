@@ -8,7 +8,7 @@ from .task import Task
 
 class Pool(threading.Thread):
     '''job queue manager'''
-    def __init__(self,node,pool,state,refresh=10,update=60,slots=None,max_runtime=None):
+    def __init__(self,node,pool,state,refresh=1,update=10,slots=None,max_runtime=None):
         self.node=node #node we are running on
         self.pool=pool #pool we service
         self.state=state #state thread
@@ -21,11 +21,6 @@ class Pool(threading.Thread):
         self.shutdown=threading.Event()
         self.__tasks={} #map of job_id -> Task object
         self.start()
-
-    def slots_free(self):
-        #returns how many slots are available or True if not set
-        if not self.slots: return None
-        else: return self.slots-len(self.__tasks)
 
     def start_job(self,jid):
         job=self.state.get_job(jid)
@@ -74,6 +69,7 @@ class Pool(threading.Thread):
     def pool_run(self):
         while not self.shutdown.is_set():
             try:
+               
                 #get jobs assigned to this node and pool
                 pool_jobs=self.state.get(node=self.node,pool=self.pool)
                 for jid,job in pool_jobs.items():
@@ -93,7 +89,12 @@ class Pool(threading.Thread):
                             #job is waiting for a slot
                             elif job['state'] != 'waiting': self.state.update_job(jid,state='waiting')
             except Exception as e: self.logger.error(e,exc_info=True)
-            self.state.set_pool_status(self.pool,self.node,self.slots_free())
+            
+            #update pool status with free slots
+            if self.slots: slots_free=self.slots-len(self.__tasks)
+            else: slots_free=None #no slots set
+            self.state.update_pool_status(self.pool,self.node,slots_free)
+
             time.sleep(self.refresh)
 
         #at shutdown, kill all jobs
