@@ -3,6 +3,7 @@
 import time
 import threading
 import logging
+import uuid
 
 class State(threading.Thread):
     '''cluster state handler'''
