@@ -209,14 +209,20 @@ class Box:
         if 'submit' in request: 
             response['submit']=self.state.add_job(**request['submit'])
         #query job
-        if 'query' in request: response['query']=self.state.get_job(request['query'])
+        if 'query' in request:
+            response['query']=self.state.get_job(request['query'])
         #modify job
         if 'modify' in request:
             for jid,data in request['modify'].items():
                 response.setdefault('modify',{})[jid]=self.state.update_job(jid,**data)
         #kill job
         if 'kill' in request:
-                response['kill']=self.state.update_job(request['kill'],state='killed')
+            response['kill']=self.state.update_job(request['kill'],state='killed')
+
+        # List all jobs
+        if 'ls' in request:
+            response['ls']=self.state.list_jobs()
+
         #get cluster status
         if 'status' in request: 
             response['status']={     

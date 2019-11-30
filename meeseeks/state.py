@@ -98,6 +98,13 @@ class State(threading.Thread):
                 else: return False
             except Exception as e: self.logger.warning(e,exc_info=True)
 
+    def list_jobs(self):
+        with self.__lock:
+            try:
+                return str(self.__jobs)
+            except Exception as e:
+                self.logger.warning(e, exc_info=True)
+
     def add_job(self,**jobargs):
         #add a new job to the state
         with self.__lock:
