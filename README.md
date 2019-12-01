@@ -118,11 +118,11 @@ The config sections, objects, and defaults are as follows:
 
     } ]
 
-#state sync
+# state sync
 
 Each node periodically pulls node and pool slot availability from connected nodes. This status is not just the status of the peer but also all downstream nodes it has received status from. From this we can determine which nodes are reachable via the peer. Job status for all downstream nldes are synced from the upstream node, then updates are pulled from the downstream node.
 
-#job status
+# job status
 
 new: submitted job, not yet claimed by a pool. node may be set to the the submit node, pool node, or any intermediate node.
 waiting: job is waiting to run in the pool. node is set to the node the job will run on
