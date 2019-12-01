@@ -100,10 +100,10 @@ The config sections, objects, and defaults are as follows:
         "stdin": path, #path to file to use for the job's stdin
         "restart_on_exit": false|true,    #if true, job will be restarted on the same node if it exits with success (rc == 0)
         "restart_on_fail": false|true,    #if true, job will be restarted on the same node if it exits with failure (rc != 0)
-                                          # if a node fails, the jobs running on it will not be updated and will expire
-                                          # these jobs will be failed. If restart_on_fail is set they will be retried once
-                                          # if a nodelist is provided, the job will be reassigned to the first node in the list
-                                          # else, the job will wait for the assigned node
+                                      # if a node fails, the jobs running on it will not be updated and will expire
+                                      # these jobs will be failed. If restart_on_fail is set they will be retried once.
+                                      # if a nodelist is provided, the job will be reassigned to the first node in the list
+                                      # else, the job will wait for the assigned node
       }
         response will be:
         {
@@ -118,3 +118,14 @@ The config sections, objects, and defaults are as follows:
 
     } ]
 
+#state sync
+
+Each node periodically pulls node and pool slot availability from connected nodes. This status is not just the status of the peer but also all downstream nodes it has received status from. From this we can determine which nodes are reachable via the peer. Job status for all downstream nldes are synced from the upstream node, then updates are pulled from the downstream node.
+
+#job status
+
+new: submitted job, not yet claimed by a pool. node may be set to the the submit node, pool node, or any intermediate node.
+waiting: job is waiting to run in the pool. node is set to the node the job will run on
+running: job is running. pid will be set. node is set to the node the job is running on
+done: job is finished. stdout and stderr will contain output
+failed: job failed. rc will be set, or error will be set. If the job expired, node may be set back to the submit node.
