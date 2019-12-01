@@ -95,10 +95,8 @@ The config sections, objects, and defaults are as follows:
             "cmd": [executable, arg, arg, arg] , #REQUIRED. the command to run and arguments. If subprocess.Popen likes it, it will work.
         "nodelist": [nodename, ... ], #optional. A list of preferred nodes to use. See Job Routing. 
         
-        "stdout": false|true|path, #optional, path to file to use for the job's stdout, or true if stdout should be returned
-                                     #if true, the "stdout" element will contain the base64 encoded output
-        "stderr": false|true|path, #optional, path to file to use for the job's stderr, or true if stderr should be returned
-                                     #if true, the "stderr" element will contain the base64 encoded output
+        "stdout": path, #optional, path to file to use for the job's stdout else returns the base64 encoded output
+        "stderr": path, #optional, path to file to use for the job's stderr else returns the base64 encoded output
         "stdin": path, #path to file to use for the job's stdin
         "restart_on_exit": false|true,    #if true, job will be restarted on the same node if it exits with success (rc == 0)
         "restart_on_fail": false|true,    #if true, job will be restarted on the same node if it exits with failure (rc != 0)
