@@ -125,7 +125,11 @@ Each node periodically pulls node and pool slot availability from connected node
 # job status
 
 new: submitted job, not yet claimed by a pool. node may be set to the the submit node, pool node, or any intermediate node.
+
 waiting: job is waiting to run in the pool. node is set to the node the job will run on
+
 running: job is running. pid will be set. node is set to the node the job is running on
+
 done: job is finished. stdout and stderr will contain output
+
 failed: job failed. rc will be set, or error will be set. If the job expired, node may be set back to the submit node.
