@@ -24,7 +24,7 @@ class Client(State):
     '''client class to connect to a node and manage the state of it and all downstream nodes.
         State object's methods are available to get status and manage jobs
         submit and kill_job methods are also available to make direct requests'''
-    def __init__(self,address=None,port=13700,timeout=10,refresh=10,expire=60,**cfg):
+    def __init__(self,address=None,port=13700,timeout=10,refresh=1,poll=10,window=5,expire=60,**cfg):
 
         #state object to cache cluster state from the node
         State.__init__(self,None,
@@ -38,6 +38,8 @@ class Client(State):
                         port=port,
                         timeout=timeout,
                         refresh=refresh,
+                        poll=poll,
+                        window=window,
                         **cfg)
 
     #direct request methods

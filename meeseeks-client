@@ -23,11 +23,12 @@ def usage():
     options are: 
         address=(default localhost)
         port=(defult 13700)
-        wait=0|1 (wait for job exit)
-        nodelist=
-        restart_on_done=0|1
-        restart_on_fail=0|1
-        max_runtime=
+        refresh=1 (sync interval)
+        wait=0|1 (for submit,query: poll job status until finished)
+        nodelist= (for submit, list of nodes to prefer)
+        restart_on_done=0|1 (for submit, restart on success exit)
+        restart_on_fail=0|1 (for submit, restart on fail)
+        max_runtime= (for submit, max runtime of job)
 """%sys.argv[0])
 
 #parse args
@@ -36,7 +37,7 @@ def usage():
 # args=remaining arguments
 cfg={
     'address':'localhost',
-    'refresh':10,
+    'refresh':1,
     'wait':False
     } 
 try:
@@ -63,7 +64,6 @@ try:
         else: pretty_print(client.query(args[0]))
     elif cmd == 'kill': 
         pretty_print(client.kill(args[0]))
-        if cfg['wait']: jid=args[0] #follow it too
     elif cmd == 'status': 
         pretty_print(client.status()['nodes'])
     elif cmd == 'pools': 
@@ -75,6 +75,7 @@ try:
         while not client.get_node_status(): time.sleep(1) #wait for client to connect
         if jid is True: pretty_print(client.get())
         else:
+            ts=0
             while True: 
                 job=client.get_job(jid)
                 if not job: 
@@ -82,7 +83,9 @@ try:
                     break
                 #wait for the job to spawn, then exit if finished or not waiting for finish
                 if job['node']:
-                    pretty_print({jid:job})
+                    if job['ts'] != ts: 
+                        pretty_print({jid:job})
+                        ts=job['ts']
                     if not cfg['wait'] or (job.get('state') in ['done','failed']): break
                 time.sleep(cfg['refresh'])
 except Exception as e: 

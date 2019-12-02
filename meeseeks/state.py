@@ -44,7 +44,7 @@ class State(threading.Thread):
                 'max_runtime'
             ]
 
-    def __init__(self,node=None,refresh=10,expire=60,expire_active_jobs=True):
+    def __init__(self,node=None,refresh=1,expire=60,expire_active_jobs=True):
         self.node=node
         name='State'
         if self.node: name=self.node+'.'+name

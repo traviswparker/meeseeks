@@ -9,7 +9,7 @@ import socket, ssl
 class Node(threading.Thread):
     '''node poller/state sync thread
     initially we try to push all state to the node (sync_ts of 0)'''
-    def __init__(self,node,remote_node,state,refresh=10,address=None,port=13700,timeout=10,**cfg):
+    def __init__(self,node,remote_node,state,address=None,port=13700,timeout=10,refresh=1,window=5,poll=10,**cfg):
         self.node=node #node we are running on 
         self.remote_node=remote_node #node we connect to
         self.state=state
@@ -21,7 +21,9 @@ class Node(threading.Thread):
         if not self.address: self.address=self.node
         self.port=port
         self.timeout=timeout
-        self.refresh=refresh
+        self.refresh=refresh #how often we sync the remote node
+        self.window=window #how far back (in refresh periouds) we request sync data
+        self.poll=poll
         self.__lock=threading.Lock() #to ensure direct request and sync don't clobber
         self.__socket=None
         self.cfg=cfg
@@ -62,7 +64,7 @@ class Node(threading.Thread):
 
     def __node_run(self):
         while not self.shutdown.is_set():
-            if not self.__socket: ts=0 #reset ts to push all state on reconnect
+            if not self.__socket: ts=poll=0 #reset ts to sync all state on reconnect
             
             #we sync updates for all nodes that are routed through the remote node
             #if self.node is None, we are are a client and always send updates
@@ -73,13 +75,14 @@ class Node(threading.Thread):
                            node_status.get(self.remote_node,{}).get('seen',[] ) )
                     )
             #create the request
-            request={
-                'status':{},
+            req={
                 #dump all jobs for this node updated more recently than the last sync
                 'sync':sync,
                 'get':{'ts':ts}
             }
-            responses=self.request([request])
+            if not (poll%self.poll): req.update(status=None) #get status if poll interval
+            poll+=1
+            responses=self.request([req])
             updated=None
             if responses:
                 response=responses[0]
@@ -88,6 +91,6 @@ class Node(threading.Thread):
                     response.get('status',{}),
                     remote_node=self.remote_node)
             if responses: self.logger.debug('%s sent %s, updated %s'%(ts,len(sync),len(updated)))
-            ts=time.time()-self.refresh*2 #set the next window to go back two refresh periods ago
+            ts=time.time()-(self.refresh*self.window) #set the next window to go back two refresh periods ago
             time.sleep(self.refresh) 
         if self.__socket:self.__socket.close()

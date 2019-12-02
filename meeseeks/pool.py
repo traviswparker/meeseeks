@@ -8,7 +8,7 @@ from .task import Task
 
 class Pool(threading.Thread):
     '''job queue manager'''
-    def __init__(self,node,pool,state,refresh=1,update=10,slots=None,max_runtime=None):
+    def __init__(self,node,pool,state,refresh=1,update=30,slots=None,max_runtime=None):
         self.node=node #node we are running on
         self.pool=pool #pool we service
         self.state=state #state thread
