@@ -17,7 +17,7 @@ class TestTask(unittest.TestCase):
     def test_execute_basic_command(self):
         filename = '/tmp/%s' % str(uuid.uuid4())
         job = self.job = {
-            'cmd': [
+            'args': [
                 'touch',
                 filename
             ]
@@ -38,7 +38,7 @@ class TestTask(unittest.TestCase):
 
     def test_can_kill_process(self):
         job = self.job = {
-            'cmd': [
+            'args': [
                 'sleep',
                 '300'
             ]
@@ -57,7 +57,7 @@ class TestTask(unittest.TestCase):
     
     def test_stderr_output(self):
         job = self.job = {
-            'cmd': [
+            'args': [
                 'sleep',
                 'abc'
             ]
@@ -78,7 +78,7 @@ class TestTask(unittest.TestCase):
     
     def test_stderr_output_is_empty_when_valid(self):
         job = self.job = {
-            'cmd': [
+            'args': [
                 'sleep',
                 '1'
             ]
@@ -94,7 +94,7 @@ class TestTask(unittest.TestCase):
 
     def test_stdout_output(self):
         job = self.job = {
-            'cmd': [
+            'args': [
                 'echo',
                 '5'
             ]

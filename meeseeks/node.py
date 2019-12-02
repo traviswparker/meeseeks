@@ -13,7 +13,7 @@ class Node(threading.Thread):
         self.node=node #node we are running on 
         self.remote_node=remote_node #node we connect to
         self.state=state
-        threading.Thread.__init__(self,daemon=True,name='Node.'+self.remote_node,target=self.node_run)
+        threading.Thread.__init__(self,daemon=True,name='Node.'+self.remote_node,target=self.__node_run)
         self.logger=logging.getLogger(self.name)
         self.address=address
         if not self.address: self.address=self.node
@@ -56,14 +56,15 @@ class Node(threading.Thread):
                     self.__socket.close()
                     self.__socket=None
 
-    def node_run(self):
+    def __node_run(self):
         while not self.shutdown.is_set():
             if not self.__socket: ts=0 #reset ts to push all state on reconnect
             
             #we sync updates for all nodes that are routed through the remote node
+            node_status=self.state.get_node_status()
             sync=dict( (jid,job) for (jid,job) in self.state.get(ts=ts).items() \
                         if job['node'] != self.node and job['node'] in \
-                        self.status.node_state.get(self.remote_node,{}).get('seen',[])
+                        node_status.get(self.remote_node,{}).get('seen',[])
                     )
             #create the request
             request={

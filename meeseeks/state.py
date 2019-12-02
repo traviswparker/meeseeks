@@ -6,47 +6,86 @@ import logging
 import uuid
 
 class State(threading.Thread):
-    '''cluster state handler'''
-    def __init__(self,node,refresh=10,expire=60):
+    '''cluster state interface
+        job submit spec is:
+            id: [optional] manually set id of the job, a UUID will be generated if not specified
+            pool: <required> the pool the job runs in
+            args: <required> list of [ arg0 (executable) [,arg1,arg2,...] ] (command line for job)
+            nodelist: [optional] list of nodes to prefer
+            stdin: filename to redirect stdin from
+            stdout: filename to redirect stdout to
+            stderr: filename to redirect stderr to
+            restart_on_done: if true, job will be restart on exit
+            restart_on_fail: if true, job will be reassigned to the nodelist if provided and restart on failure
+            max_runtime: job maximum runtime in seconds
+        job attributes:
+            node: the node the job is assigned to
+            state: the job state (new,waiting,running,done,failed)
+            rc: exit code if job done/failed
+            error: error details if job did not spawn
+            stdout: base64 encoded stdout after exit if not redirected to a file
+            stdout: base64 encoded stderr after exit if not redirected to a file
+            ts: update timestamp
+            submit_ts: submit timestamp
+            start_ts: job start timestamp
+            end_ts: job end timestamp
+    '''
+
+    #only allow these keys to prevent shenanigans
+    JOB_SPEC=[  'id',
+                'pool',
+                'args',
+                'nodelist',
+                'stdin',
+                'stderr',
+                'stdout',
+                'restart_on_done',
+                'restart_on_fail',
+                'max_runtime'
+            ]
+
+    def __init__(self,node,refresh=10,expire=60,expire_active_jobs=True):
         self.node=node
-        threading.Thread.__init__(self,daemon=True,name=self.node+'.State',target=self.state_run)
+        threading.Thread.__init__(self,daemon=True,name=self.node+'.State',target=self.__state_run)
         self.logger=logging.getLogger(self.name)
 
         self.shutdown=threading.Event()
 
         self.refresh=refresh
         self.expire=expire
+        self.expire_active_jobs=expire_active_jobs
     
-        '''state is:
-            __jobs: { jid: {pool: node: ts: state: [jobargs...] }} }
-            jid: uuid of the job
-            ts: the last updated timestamp of the job
-            pool: the pool (queue) the job runs in 
-            node: the node the job is assigned to
-            state: the job state
-        '''
         self.__lock=threading.Lock() #lock on __jobs dict
         self.__jobs={} #(partial) cluster job state, this is private because we lock during any changes
-        self.pool_status={} #map of [pool][node][open slots] for nodes we connect downstream to
-        self.node_status={} #map of node:last status
+        self.__pool_status={} #map of [pool][node][open slots] for nodes we connect downstream to
+        self.__node_status={} #map of node:last status
 
         self.start()
 
+    #these return a copy of the private state, use update_ methods to modify it
+    def get_pool_status(self): 
+        '''get a pool:node:slots_free map of pool availability'''
+        return self.__pool_status.copy()
+
+    def get_node_status(self): 
+        '''get a node:status map of cluster status'''
+        return self.__node_status.copy()
+    
     def update_pool_status(self,pool,node,slots): 
         with self.__lock:
-            self.pool_status.setdefault(pool,{})[node]=slots
+            self.__pool_status.setdefault(pool,{})[node]=slots
 
     def update_node_status(self,node,**node_status): 
         with self.__lock:
-            self.node_status.setdefault(node,{}).update(**node_status)
+            self.__node_status.setdefault(node,{}).update(**node_status)
             #take offline nodes out of the pools
             if not node_status.get('online'):
-                for pool in self.pool_status.keys():
-                    if node in self.pool_status[pool]:
-                        del self.pool_status[pool][node]
+                for pool in self.__pool_status.keys():
+                    if node in self.__pool_status[pool]:
+                        del self.__pool_status[pool][node]
 
     def get(self,node=None,pool=None,ts=None):
-        #dump all state for a node/pool/or updated after a certain ts
+        '''dump all state for a node/pool/or updated after a certain ts'''
         with self.__lock:
             try: 
                 return dict((jid,job.copy()) for (jid,job) in self.__jobs.items() if \
@@ -58,7 +97,8 @@ class State(threading.Thread):
         return None
 
     def sync(self,jobs={},status={},remote_node=None):
-        #update local state with incoming state if job not in local state or job ts >= local jobs ts
+        '''update local status cache with incoming status 
+        and jobs not in local state or job ts >= local jobs ts'''
         with self.__lock:
             updated=[]
             try:
@@ -82,14 +122,14 @@ class State(threading.Thread):
         return updated
 
     def get_job(self,jid):
-        #get job by ID
+        '''return job jid's data from state'''
         with self.__lock:
             try:
                 if jid in self.__jobs: return self.__jobs.get(jid).copy()
             except Exception as e: self.logger.warning(e,exc_info=True)
     
     def update_job(self,jid,**data):
-        #get job by ID
+        '''update job jid with k/v in data'''
         with self.__lock:
             try:
                 if jid in self.__jobs: 
@@ -98,26 +138,23 @@ class State(threading.Thread):
                 else: return False
             except Exception as e: self.logger.warning(e,exc_info=True)
 
-    def list_jobs(self):
-        with self.__lock:
-            try:
-                return str(self.__jobs)
-            except Exception as e:
-                self.logger.warning(e, exc_info=True)
-
+    def list_jobs(self,**kwargs):
+        '''return list of job ids'''
+        return list(self.get(**kwargs).keys())
+        
     def add_job(self,**jobargs):
-        #add a new job to the state
+        '''add a job, see job spec for proper key=values'''
         with self.__lock:
             try:
-                if 'pool' not in jobargs or 'cmd' not in jobargs: return False #jobs have to have a command and pool to run in
+                #filter job spec keys
+                jobargs=dict((k,v) for (k,v) in jobargs.items() if k in self.JOB_SPEC)
+                if 'pool' not in jobargs or 'args' not in jobargs: return False #jobs have to have a command and pool to run in
                 jid=jobargs.get('id',str(uuid.uuid1())) #use preset id or generate one
                 if jid in self.__jobs: #job exists
                     self.logger.warning('add_job: %s exists'%jid)
                     return False
                 self.__jobs[jid]={  'ts':time.time(),           #last updated timestamp
                                     'submit_ts':time.time(),    #submit timestamp
-                                    'start_ts':None,            #job start
-                                    'end_ts':None,              #job end
                                     'pool':None,                #pool to run in 
                                     'nodelist':[],              #list of nodes allowed to handle this job
                                     'node':self.node,           #node job is currently on
@@ -127,11 +164,11 @@ class State(threading.Thread):
                 return jid
             except Exception as e: self.logger.warning(e,exc_info=True)
 
-    def state_run(self):
+    def __state_run(self):
         self.logger.info('started')
         while not self.shutdown.is_set():
-            self.logger.debug('status %s'%self.node_status)
-            self.logger.debug('pools %s'%self.pool_status)
+            self.logger.debug('status %s'%self.__node_status)
+            self.logger.debug('pools %s'%self.__pool_status)
             #look for jobs that should have been updated
             with self.__lock:
                 try:
@@ -141,7 +178,7 @@ class State(threading.Thread):
                             if job['state'] in ['done','killed','failed']:
                                 self.logger.debug('expiring job %s'%jid)
                                 del self.__jobs[jid]
-                            else: 
+                            elif self.expire_active_jobs: 
                                 #this job *should* have been updated
                                 self.logger.warning('job %s not updated in %s seconds'%(jid,self.expire))
                                 #if we restart on fail and have a nodelist
@@ -154,7 +191,7 @@ class State(threading.Thread):
                                 
                 except Exception as e: self.logger.warning(e,exc_info=True)
             #set nodes that have not sent status to offline
-            for node,node_status in self.node_status.items():
+            for node,node_status in self.__node_status.items():
                 if node_status.get('online') and time.time()-node_status['ts'] > self.expire:
                     self.logger.warning('node %s not updated in %s seconds'%(node,self.expire))
                     self.update_node_status(node,online=False)

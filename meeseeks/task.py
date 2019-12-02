@@ -8,7 +8,7 @@ import base64
 class Task(threading.Thread):
     '''subprocess manager'''        
     def __init__(self,job):
-        threading.Thread.__init__(self)
+        threading.Thread.__init__(self,target=self.__task_run)
         popen_args={}
         self.stdin=self.stdout=self.stderr=None #file handles if redirecting
 
@@ -36,11 +36,11 @@ class Task(threading.Thread):
             
         # start subprocess
         # TODO: Needs to handle FileNotFoundError and other exceptions
-        self.__sub=subprocess.Popen(job.get('cmd'), **popen_args)
+        self.__sub=subprocess.Popen(job.get('args'), **popen_args)
         self.pid=self.__sub.pid
         self.start() #thread will wait on subprocess
     
-    def run(self): 
+    def __task_run(self): 
         # block here until process finishes
         stdout,stderr=self.__sub.communicate()
 

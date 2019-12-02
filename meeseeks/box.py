@@ -21,7 +21,7 @@ class RequestHandler(socketserver.StreamRequestHandler):
         self.logger.debug('connected')
         while True:
             l=self.rfile.readline() #get line from client
-            if not l: break #will be None if client disconnected
+            if not l.strip(): break #will be None if client disconnected
             requests=json.loads(l) #apply initial config
             responses=[]
             if requests:
@@ -51,6 +51,9 @@ class RequestListener (socketserver.ThreadingMixIn, socketserver.TCPServer):
 class Box:
     '''meeseeks box main thread'''
     def __init__(self,nodes={},pools={},**cfg):
+
+        self.shutdown=threading.Event()
+
         #load config defaults
         self.defaults=cfg.get('defaults',{})
         
@@ -110,8 +113,9 @@ class Box:
 
     def select_by_loadavg(self,nodes):
         #loadvg,node sorted low to high
-        loadavg_nodes=[ (self.state.node_status[node].get('loadavg'), node) for node in nodes \
-            if self.state.node_status[node].get('loadavg') is not None ] 
+        node_status=self.state.get_node_status()
+        loadavg_nodes=[ (node_status[node].get('loadavg'), node) for node in nodes \
+            if node_status[node].get('loadavg') is not None ] 
         #do we have any valid load averages?
         if loadavg_nodes: return self.biased_random(loadavg_nodes)[1]
         #if we have no valid load averages, pick a random node from the pool
@@ -119,8 +123,9 @@ class Box:
     
     def select_by_available(self,pool,nodes):
         #get nodes in this pool sorted from most to least open slots
-        nodes_slots=[ (self.state.pool_status[pool][node], node) for node in nodes \
-            if self.state.pool_status[pool][node] is not None ]
+        pool_status=self.state.get_pool_status()
+        nodes_slots=[ (pool_status[pool][node], node) for node in nodes \
+            if pool_status[pool][node] is not None ]
         #do we have any nodes with pool slots?
         if nodes_slots: 
             s,node=self.biased_random(nodes_slots,reverse=True)
@@ -132,7 +137,7 @@ class Box:
     def run(self):
         self.logger.info('running')
  
-        while True: #existence is pain!
+        while not self.shutdown.is_set(): #existence is pain!
             #update our node status
             self.state.update_node_status( self.name,
                 online=True,
@@ -148,7 +153,7 @@ class Box:
                     if pool not in self.pools: 
                         try:
                             #we need to select a node that has the job's pool
-                            nodes=list(self.state.pool_status.get(pool,{}).keys())
+                            nodes=list(self.state.get_pool_status().get(pool,{}).keys())
                             if not nodes: continue #we can't do anything with this job
 
                             #filter by the job's nodelist if set
@@ -171,8 +176,9 @@ class Box:
                 
                 time.sleep(1)
 
-            except KeyboardInterrupt: break
-            except Exception as e: self.logger.error(e,exc_info=True)
+            except Exception as e: 
+                self.logger.error(e,exc_info=True)
+                self.shutdown.set()
 
         self.logger.info('shutting down')
         try:
@@ -229,9 +235,9 @@ class Box:
         if 'status' in request: 
             response['status']={     
                 #return the status of us and downstream nodes
-                'nodes':self.state.node_status,
+                'nodes':self.state.get_node_status(),
                 #return the  status of pools we know about
-                'pools':self.state.pool_status
+                'pools':self.state.get_pool_status()
             }
 
         # Does not format nicely via netcat, because of newlines/tabs

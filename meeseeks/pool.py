@@ -16,7 +16,7 @@ class Pool(threading.Thread):
         self.update=update #how often we update the state of running/waiting jobs
         self.max_runtime=max_runtime
         self.slots=slots #number of job slots, or None if not limited
-        threading.Thread.__init__(self,daemon=True,name='Pool.'+self.pool,target=self.pool_run)
+        threading.Thread.__init__(self,daemon=True,name='Pool.'+self.pool,target=self.__pool_run)
         self.logger=logging.getLogger(self.name)
         self.shutdown=threading.Event()
         self.__tasks={} #map of job_id -> Task object
@@ -66,7 +66,7 @@ class Pool(threading.Thread):
             self.logger.warning('job %s exceeded pool max_runtime of %s'%(jid,self.max_runtime))
             self.kill_job(jid,job)
 
-    def pool_run(self):
+    def __pool_run(self):
         while not self.shutdown.is_set():
             try:
                

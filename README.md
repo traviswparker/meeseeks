@@ -92,7 +92,7 @@ The config sections, objects, and defaults are as follows:
       "submit" :{ 
             "id": string , #job id, optional, MUST be unique. A UUID will be generated if id is omitted
             "pool": string , #pool name, REQUIRED.
-            "cmd": [executable, arg, arg, arg] , #REQUIRED. the command to run and arguments. If subprocess.Popen likes it, it will work.
+            "args": [executable, arg, arg, arg] , #REQUIRED. the command to run and arguments. If subprocess.Popen likes it, it will work.
         "nodelist": [nodename, ... ], #optional. A list of preferred nodes to use. See Job Routing. 
         
         "stdout": path, #optional, path to file to use for the job's stdout else returns the base64 encoded output
