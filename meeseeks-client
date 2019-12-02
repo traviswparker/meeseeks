@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+
+import sys
+import logging
+import json
+import time
+
+from meeseeks import Client
+
+def pretty_print(d): print (json.dumps(d, sort_keys=True, indent=4))
+
+def usage():
+    print("""
+%s [options] <command> [args...]
+    commands are:
+        submit <pool> <executable> [args....]
+        query <jobid>
+        kill <jobid>
+        status (prints all node status)
+        pools (prints all pools and free slots)
+        jobs (prints all jobs)
+
+    options are: 
+        address=(default localhost)
+        port=(defult 13700)
+        wait=0|1 (wait for job exit)
+        nodelist=
+        restart_on_done=0|1
+        restart_on_fail=0|1
+        max_runtime=
+"""%sys.argv[0])
+
+#parse args
+# cfg={key=value pairs preceeding first non k=v argument}
+# cmd=first non k=v argument
+# args=remaining arguments
+cfg={
+    'address':'localhost',
+    'refresh':10,
+    'wait':False
+    } 
+try:
+    cmd,args=None,[]
+    for i,arg in enumerate(sys.argv[1:]):
+        if '=' in arg:
+            k,v=arg.split('=',1)
+            if v.isnumeric(): v=int(v)
+            elif ',' in v: v=list(v.split(','))
+            cfg[k]=v
+        else: 
+            cmd,args=sys.argv[i+1],sys.argv[i+2:] #end of options
+            break
+    logging.basicConfig(level=cfg.get('log',logging.INFO))
+    client=Client(**cfg)
+    while not client.get_node_status(): time.sleep(1) #wait for client to connect
+    jid=None
+
+    if cmd == 'submit':
+        pool,args=args[0],args[1:]
+        jid=client.add_job(pool=pool,args=args,**cfg)
+        print (jid)
+    elif cmd == 'query': jid=args[0]
+    elif cmd == 'kill': pretty_print(client.kill_job(args[0]))
+    elif cmd == 'status': pretty_print(client.get_node_status())
+    elif cmd == 'pools': pretty_print(client.get_pool_status())
+    elif cmd == 'jobs': pretty_print(client.get())
+    else: sys.exit(usage())
+    if jid:
+        while True: 
+            job=client.get_job(jid)
+            if not job: 
+                print(job)
+                break
+            #wait for the job to spawn, then exit if finished or not waiting for finish
+            if job['node']:
+                pretty_print(job)
+                if not cfg['wait'] or (job.get('state') in ['done','failed']): break
+            time.sleep(cfg['refresh'])
+except Exception as e: 
+    sys.exit(print (e,file=sys.stderr))

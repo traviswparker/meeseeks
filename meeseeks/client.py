@@ -10,7 +10,7 @@ from .node import Node
 '''
 Example:
 from meeseeks import Client
-c=Client('master')
+c=Client('localhost')
 c.get_node_status() #get cluster status
 c.get_pool_status() #get pools
 c.get()             #get all jobs
@@ -23,16 +23,16 @@ c.close()           #disconnect client
 class Client(State):
     '''client class to connect to a node and manage the state of it and all downstream nodes.
         State object methods are available to get status and manage jobs'''
-    def __init__(self,remote_node,address=None,port=13700,timeout=10,refresh=10,expire=60,**cfg):
+    def __init__(self,address=None,port=13700,timeout=10,refresh=10,expire=60,**cfg):
 
         #state object to cache cluster state from the node
-        State.__init__(self,remote_node,
+        State.__init__(self,None,
                         refresh=refresh,
                         expire=expire,
                         expire_active_jobs=False)
      
         #internal node object to communicate with the node
-        self.__node=Node(None,remote_node,self,
+        self.__node=Node(None,None,self,
                         address=address,
                         port=port,
                         timeout=timeout,

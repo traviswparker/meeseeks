@@ -13,7 +13,9 @@ class Node(threading.Thread):
         self.node=node #node we are running on 
         self.remote_node=remote_node #node we connect to
         self.state=state
-        threading.Thread.__init__(self,daemon=True,name='Node.'+self.remote_node,target=self.__node_run)
+        name='Node'
+        if self.remote_node: name+='.'+self.remote_node
+        threading.Thread.__init__(self,daemon=True,name=name,target=self.__node_run)
         self.logger=logging.getLogger(self.name)
         self.address=address
         if not self.address: self.address=self.node
@@ -26,7 +28,7 @@ class Node(threading.Thread):
         self.start()
 
     def __sr(self,requests):
-        #conected and send/recieve request/response
+        #connect and send/recieve request/response
         if not self.__socket:
             self.logger.debug('connecting to %s:%s'%(self.address,self.port))
             try: 
@@ -61,10 +63,12 @@ class Node(threading.Thread):
             if not self.__socket: ts=0 #reset ts to push all state on reconnect
             
             #we sync updates for all nodes that are routed through the remote node
+            #if self.node is None, we are are a client and always send updates
             node_status=self.state.get_node_status()
             sync=dict( (jid,job) for (jid,job) in self.state.get(ts=ts).items() \
-                        if job['node'] != self.node and job['node'] in \
-                        node_status.get(self.remote_node,{}).get('seen',[])
+                        if self.node is None or \
+                         ( job['node'] != self.node and job['node'] in \
+                           node_status.get(self.remote_node,{}).get('seen',[] ) )
                     )
             #create the request
             request={
@@ -82,6 +86,6 @@ class Node(threading.Thread):
                     response.get('status',{}),
                     remote_node=self.remote_node)
             if responses: self.logger.debug('%s sent %s, updated %s'%(ts,len(sync),len(updated)))
-            ts=time.time()-self.refresh #set the next window to go back to one refresh period ago
+            ts=time.time()-self.refresh*2 #set the next window to go back two refresh periods ago
             time.sleep(self.refresh) 
         if self.__socket:self.__socket.close()

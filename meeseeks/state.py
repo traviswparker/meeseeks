@@ -44,9 +44,11 @@ class State(threading.Thread):
                 'max_runtime'
             ]
 
-    def __init__(self,node,refresh=10,expire=60,expire_active_jobs=True):
+    def __init__(self,node=None,refresh=10,expire=60,expire_active_jobs=True):
         self.node=node
-        threading.Thread.__init__(self,daemon=True,name=self.node+'.State',target=self.__state_run)
+        name='State'
+        if self.node: name=self.node+'.'+name
+        threading.Thread.__init__(self,daemon=True,name=name,target=self.__state_run)
         self.logger=logging.getLogger(self.name)
 
         self.shutdown=threading.Event()
@@ -103,7 +105,8 @@ class State(threading.Thread):
             updated=[]
             try:
                 for jid,job in jobs.items():
-                    if jid not in self.__jobs or self.__jobs[jid]['ts'] <= job['ts']: 
+                    if jid not in self.__jobs or self.__jobs[jid]['ts'] <= job['ts']:
+                        if not job.get('node'): job['node']=self.node #may not be set from client
                         self.__jobs.setdefault(jid,{}).update(job)
                         updated.append(jid)
             except Exception as e: self.logger.warning(e,exc_info=True)
@@ -157,7 +160,7 @@ class State(threading.Thread):
                                     'submit_ts':time.time(),    #submit timestamp
                                     'pool':None,                #pool to run in 
                                     'nodelist':[],              #list of nodes allowed to handle this job
-                                    'node':self.node,           #node job is currently on
+                                    'node':self.node,           #node we are on
                                     'state':'new'               #job state
                                 }             
                 self.__jobs[jid].update(jobargs)
