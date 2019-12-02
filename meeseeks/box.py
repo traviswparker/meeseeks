@@ -229,7 +229,7 @@ class Box:
 
         # List all jobs
         if 'ls' in request:
-            response['ls']=self.state.list_jobs()
+            response['ls']=self.state.list_jobs(**request['ls'])
 
         #get cluster status
         if 'status' in request: 

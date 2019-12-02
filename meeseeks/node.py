@@ -22,41 +22,43 @@ class Node(threading.Thread):
         self.port=port
         self.timeout=timeout
         self.refresh=refresh
+        self.__lock=threading.Lock() #to ensure direct request and sync don't clobber
         self.__socket=None
         self.cfg=cfg
         self.shutdown=threading.Event()
         self.start()
 
-    def __sr(self,requests):
-        #connect and send/recieve request/response
-        if not self.__socket:
-            self.logger.debug('connecting to %s:%s'%(self.address,self.port))
-            try: 
-                self.__socket=socket.create_connection((self.address,self.port),timeout=self.timeout)
-                sslcfg=self.cfg.get('ssl')
-                if sslcfg:
-                    self.__socket = ssl.wrap_socket(self.__socket,
-                        certfile = sslcfg.get('certfile'),
-                        keyfile = sslcfg.get('keyfile'),
-                        ca_certs = sslcfg.get('ca_certs') )
-            except Exception as e:
-                if self.__socket is not False:
-                    self.logger.warning("%s:%s %s"%(self.address,self.port,e))
-                    self.__socket=False #suppress repeated warnings
-            if self.__socket: self.logger.info('connected to %s:%s'%(self.address,self.port))
-        if self.__socket:
-            try:
-                self.__socket.sendall(json.dumps(requests).encode())
-                self.__socket.sendall('\n'.encode())
-                l=''
-                while True:
-                    l+=self.__socket.recv(65535).decode()
-                    if '\n' in l: return json.loads(l)
-            except Exception as e: 
-                self.logger.warning(e,exc_info=True)
-                if self.__socket: 
-                    self.__socket.close()
-                    self.__socket=None
+    def request(self,requests):
+        with self.__lock:
+            #connect and send/recieve request/response
+            if not self.__socket:
+                self.logger.debug('connecting to %s:%s'%(self.address,self.port))
+                try: 
+                    self.__socket=socket.create_connection((self.address,self.port),timeout=self.timeout)
+                    sslcfg=self.cfg.get('ssl')
+                    if sslcfg:
+                        self.__socket = ssl.wrap_socket(self.__socket,
+                            certfile = sslcfg.get('certfile'),
+                            keyfile = sslcfg.get('keyfile'),
+                            ca_certs = sslcfg.get('ca_certs') )
+                except Exception as e:
+                    if self.__socket is not False:
+                        self.logger.warning("%s:%s %s"%(self.address,self.port,e))
+                        self.__socket=False #suppress repeated warnings
+                if self.__socket: self.logger.info('connected to %s:%s'%(self.address,self.port))
+            if self.__socket:
+                try:
+                    self.__socket.sendall(json.dumps(requests).encode())
+                    self.__socket.sendall('\n'.encode())
+                    l=''
+                    while True:
+                        l+=self.__socket.recv(65535).decode()
+                        if '\n' in l: return json.loads(l)
+                except Exception as e: 
+                    self.logger.warning(e,exc_info=True)
+                    if self.__socket: 
+                        self.__socket.close()
+                        self.__socket=None
 
     def __node_run(self):
         while not self.shutdown.is_set():
@@ -77,7 +79,7 @@ class Node(threading.Thread):
                 'sync':sync,
                 'get':{'ts':ts}
             }
-            responses=self.__sr([request])
+            responses=self.request([request])
             updated=None
             if responses:
                 response=responses[0]

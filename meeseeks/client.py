@@ -22,7 +22,8 @@ c.close()           #disconnect client
 
 class Client(State):
     '''client class to connect to a node and manage the state of it and all downstream nodes.
-        State object methods are available to get status and manage jobs'''
+        State object's methods are available to get status and manage jobs
+        submit and kill_job methods are also available to make direct requests'''
     def __init__(self,address=None,port=13700,timeout=10,refresh=10,expire=60,**cfg):
 
         #state object to cache cluster state from the node
@@ -39,7 +40,12 @@ class Client(State):
                         refresh=refresh,
                         **cfg)
 
-    def kill_job(self,jid): return self.update_job(jid,state='killed')
+    #direct request methods
+    def submit(self,**kwargs): return self.__node.request([{'submit':kwargs}])[0]['submit']
+    def query(self,jid): return self.__node.request([{'query':jid}])[0]['query']
+    def kill(self,jid): return self.__node.request([{'kill':jid}])[0]['kill']
+    def ls(self,**kwargs): return self.__node.request([{'ls':kwargs}])[0]['ls']
+    def status(self): return self.__node.request([{'status':None}])[0]['status']
     
     def close(self): 
         #stop the node and state threads

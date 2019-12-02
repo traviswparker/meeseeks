@@ -52,29 +52,38 @@ try:
             break
     logging.basicConfig(level=cfg.get('log',logging.INFO))
     client=Client(**cfg)
-    while not client.get_node_status(): time.sleep(1) #wait for client to connect
     jid=None
 
     if cmd == 'submit':
         pool,args=args[0],args[1:]
-        jid=client.add_job(pool=pool,args=args,**cfg)
-        print (jid)
-    elif cmd == 'query': jid=args[0]
-    elif cmd == 'kill': pretty_print(client.kill_job(args[0]))
-    elif cmd == 'status': pretty_print(client.get_node_status())
-    elif cmd == 'pools': pretty_print(client.get_pool_status())
-    elif cmd == 'jobs': pretty_print(client.get())
+        if cfg['wait']: jid=client.add_job(pool=pool,args=args,**cfg)
+        else: print(client.submit(pool=pool,args=args,**cfg))
+    elif cmd == 'query': 
+        if cfg['wait']: jid=args[0] #follow it too
+        else: pretty_print(client.query(args[0]))
+    elif cmd == 'kill': 
+        pretty_print(client.kill(args[0]))
+        if cfg['wait']: jid=args[0] #follow it too
+    elif cmd == 'status': 
+        pretty_print(client.status()['nodes'])
+    elif cmd == 'pools': 
+        pretty_print(client.status()['pools'])
+    elif cmd == 'ls': pretty_print(client.ls(**cfg))
+    elif cmd == 'jobs': jid=True
     else: sys.exit(usage())
     if jid:
-        while True: 
-            job=client.get_job(jid)
-            if not job: 
-                print(job)
-                break
-            #wait for the job to spawn, then exit if finished or not waiting for finish
-            if job['node']:
-                pretty_print(job)
-                if not cfg['wait'] or (job.get('state') in ['done','failed']): break
-            time.sleep(cfg['refresh'])
+        while not client.get_node_status(): time.sleep(1) #wait for client to connect
+        if jid is True: pretty_print(client.get())
+        else:
+            while True: 
+                job=client.get_job(jid)
+                if not job: 
+                    pretty_print({jid:job})
+                    break
+                #wait for the job to spawn, then exit if finished or not waiting for finish
+                if job['node']:
+                    pretty_print({jid:job})
+                    if not cfg['wait'] or (job.get('state') in ['done','failed']): break
+                time.sleep(cfg['refresh'])
 except Exception as e: 
     sys.exit(print (e,file=sys.stderr))
