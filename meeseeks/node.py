@@ -6,6 +6,20 @@ import logging
 import json
 import socket, ssl
 
+def create_ssl_context(cfg):
+    ssl_context=ssl.SSLContext(
+        ssl.PROTOCOL_TLS,
+        capath=cfg.get('capath'),
+        cafile=cfg.get('cafile'))
+    if 'ciphers' in cfg: ssl_context.set_ciphers(cfg['ciphers'])
+    if 'options' in cfg: ssl_context.options|=cfg['options']
+    if 'verify' in cfg: ssl_context.verify_mode=cfg['verify']
+    if 'cert' in cfg: ssl_context.load_cert_chain(
+        cfg.get('cert'),
+        keyfile=cfg.get('key'),
+        password=cfg.get('pass') )
+    return ssl_context
+
 class Node(threading.Thread):
     '''node poller/state sync thread
     initially we try to push all state to the node (sync_ts of 0)'''
@@ -37,15 +51,11 @@ class Node(threading.Thread):
                 self.logger.debug('connecting to %s:%s'%(self.address,self.port))
                 try: 
                     self.__socket=socket.create_connection((self.address,self.port),timeout=self.timeout)
-                    sslcfg=self.cfg.get('ssl')
-                    if sslcfg:
-                        self.__socket = ssl.wrap_socket(self.__socket,
-                            certfile = sslcfg.get('certfile'),
-                            keyfile = sslcfg.get('keyfile'),
-                            ca_certs = sslcfg.get('ca_certs') )
+                    if 'ssl' in self.cfg:
+                        self.__socket = create_ssl_context(self.cfg.get('ssl')).wrap_socket(self.__socket)
                 except Exception as e:
                     if self.__socket is not False:
-                        self.logger.warning("%s:%s %s"%(self.address,self.port,e))
+                        self.logger.warning(e)
                         self.__socket=False #suppress repeated warnings
                 if self.__socket: self.logger.info('connected to %s:%s'%(self.address,self.port))
             if self.__socket:
@@ -57,7 +67,7 @@ class Node(threading.Thread):
                         l+=self.__socket.recv(65535).decode()
                         if '\n' in l: return json.loads(l)
                 except Exception as e: 
-                    self.logger.warning(e,exc_info=True)
+                    self.logger.warning(e)
                     if self.__socket: 
                         self.__socket.close()
                         self.__socket=None

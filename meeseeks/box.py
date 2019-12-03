@@ -11,7 +11,7 @@ import socketserver
 import ssl
 
 from .state import State
-from .node import Node
+from .node import Node, create_ssl_context
 from .pool import Pool
 
 class RequestHandler(socketserver.StreamRequestHandler):
@@ -36,15 +36,11 @@ class RequestHandler(socketserver.StreamRequestHandler):
 class RequestListener (socketserver.ThreadingMixIn, socketserver.TCPServer):
     '''control socket'''
     allow_reuse_address=True
+    ssl_context=None
     def get_request(self):
         newsocket, fromaddr = self.socket.accept()
-        sslcfg=self.cfg.get('ssl')
-        if sslcfg:
-            connstream = ssl.wrap_socket(newsocket,
-                        server_side=True,
-                        certfile = sslcfg.get('certfile'),
-                        keyfile = sslcfg.get('keyfile'),
-                        ca_certs = sslcfg.get('ca_certs') )
+        if self.ssl_context:
+            connstream = self.ssl_context.wrap_socket(newsocket,server_side=True )
             return connstream, fromaddr
         return newsocket, fromaddr
 
@@ -69,17 +65,17 @@ class Box:
         self.state=State(self.name,**scfg)
 
         #start listening
-        listencfg=self.defaults.copy()
-        listencfg.update(cfg.get('listen',{})) #merge in listener specifc options
-        self.listener=RequestListener( (  listencfg.get('address','localhost'),
-                                            listencfg.get('port',13700)   ), 
+        lcfg=self.defaults.copy()
+        lcfg.update(cfg.get('listen',{})) #merge in listener specifc options
+        self.listener=RequestListener( (  lcfg.get('address','localhost'),
+                                            lcfg.get('port',13700)   ), 
                             RequestHandler)
-        self.listener.cfg=listencfg #for passing ssl params and other options
+        if 'ssl' in lcfg: self.listener.ssl_context=create_ssl_context(lcfg['ssl'])
         self.listener.handler=self
         self.listener.server_thread=threading.Thread(target=self.listener.serve_forever)
         self.listener.server_thread.daemon=True
         self.listener.server_thread.start()
-        self.logger.info('listening on %s:%s'%self.listener.server_address)
+        self.logger.info('listening on %s %s'%(self.listener.server_address,lcfg))
 
         #init pools
         self.pools={} #pools we process jobs for

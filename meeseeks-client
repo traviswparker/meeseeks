@@ -12,33 +12,38 @@ def pretty_print(d): print (json.dumps(d, sort_keys=True, indent=4))
 def usage():
     print("""
 %s [options] <command> [args...]
+
     commands are:
         submit <pool[@node]> <executable> [args....]
-        get [jobid,jobid...] (get all or specified jobs, or set node=|pool=|ts= in options)
+            options for submit:
+                nodelist= (list of nodes to route job through)
+                stdin= stdout= stderr= (redirect job in/out/err to files named)
+                restart_on_done= (1=restart)
+                restart_on_fail= (1=restart)
+                max_runtime= (max runtime of job)
+
+        get [jobid,jobid...] (get all or specified jobs)
+            options for get:
+                node= pool= ts= (query filters for jobs)
+
         kill <jobid> [,jobid...]
+
         status (prints all node status)
+
         pools (prints all pools and free slots)
 
-    options are: 
-        address=(default localhost)
-        port=(defult 13700)
-        refresh=1 (sync interval)
-        wait=0|1 (continuously poll status, for submit,get,kill: until no jobs left)
-        nodelist= (for submit, list of nodes to prefer)
-        restart_on_done=0|1 (for submit, restart on success exit)
-        restart_on_fail=0|1 (for submit, restart on fail)
-        max_runtime= (for submit, max runtime of job)
+    generic options are: 
+        address= (default localhost)
+        port= (defult 13700)
+        refresh= (interval to continuously refresh status until no jobs left)
+
 """%sys.argv[0])
 
 #parse args
 # cfg={key[.subkey]=value[,value..] args preceeding first non = argument}
 # cmd=first non cfg argument
 # args=remaining arguments
-cfg={
-    'address':'localhost',
-    'refresh':1,
-    'wait':False
-    } 
+cfg={ 'address':'localhost' } 
 try:
     cmd,args=None,[]
     for i,arg in enumerate(sys.argv[1:]):
@@ -61,19 +66,19 @@ try:
     jids=None
     #get query spec from config if any
     query=dict((k,v) for (k,v) in cfg.items() if k in ['node','pool','ts'])
-    #if we will be waiting, wait now until state populated
-    if cfg['wait']:
+    #if we will be refreshing, refresh now until state populated
+    if cfg.get('refresh'):
         while not client.get_node_status(): time.sleep(1)
     if cmd == 'submit':
         #get pool, args and optional node selection
         pool,args,node=args[0],args[1:],None
         if '@' in pool: pool,node=pool.split('@',1)
-        #if we are waiting on the job, submit locally and let it dispatch
-        if cfg['wait']: jids=[client.add_job(pool=pool,args=args,node=node,**cfg)]
+        #if we are refreshing on the job, submit locally and let it dispatch
+        if cfg.get('refresh'): jids=[client.add_job(pool=pool,args=args,node=node,**cfg)]
         #submit directly and return jid
         else: print(client.submit(pool=pool,args=args,node=node,**cfg))
     elif cmd == 'get':
-        if cfg['wait']:
+        if cfg.get('refresh'):
             if args: jids=args
             else: jids=True #get all
         elif args:
@@ -81,22 +86,22 @@ try:
         else: pretty_print(client.query(**query))
     elif cmd == 'kill': 
         for arg in args: pretty_print({arg:client.kill(arg)})
-        if cfg['wait'] and args: jids=args
+        if cfg.get('refresh') and args: jids=args
     elif cmd == 'status': 
-        if cfg['wait']: 
+        if cfg.get('refresh'): 
             while True:
                 pretty_print(client.get_node_status())
-                time.sleep(cfg['refresh'])
-            else: pretty_print(client.status()['nodes'])
+                time.sleep(cfg.get('refresh'))
+        else: pretty_print(client.status()['nodes'])
     elif cmd == 'pools': 
-        if cfg['wait']: 
+        if cfg.get('refresh'): 
             while True:
                 pretty_print(client.get_pool_status())
-                time.sleep(cfg['refresh'])
+                time.sleep(cfg.get('refresh'))
         else: pretty_print(client.status()['pools'])
     elif cmd == 'ls': pretty_print(client.ls(**cfg))
     else: sys.exit(usage())
-    #waiting on jobs
+    #refreshing on jobs
     if jids:
         seq={} #sequence numbers for printing updates
         while True: 
@@ -107,8 +112,8 @@ try:
             updates=dict((jid,job) for (jid,job) in jobs.items() if job['seq'] != seq.get(jid))
             if updates: pretty_print(updates)
             seq=dict((jid,job['seq']) for (jid,job) in jobs.items())
-            time.sleep(cfg['refresh'])
+            time.sleep(cfg.get('refresh'))
 except Exception as e: print (e,file=sys.stderr)
 
 #if we were polling state, stop gracefully
-if cfg['wait']: client.close()
+if cfg.get('refresh'): client.close()
