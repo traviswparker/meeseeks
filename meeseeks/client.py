@@ -28,7 +28,6 @@ class Client(State):
 
         #state object to cache cluster state from the node
         State.__init__(self,None,
-                        refresh=refresh,
                         expire=expire,
                         expire_active_jobs=False)
      

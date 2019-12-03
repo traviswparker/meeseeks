@@ -14,6 +14,7 @@ class Node(threading.Thread):
         self.remote_node=remote_node #node we connect to
         self.state=state
         name='Node'
+        if self.node:name=self.node+'.'+name
         if self.remote_node: name+='.'+self.remote_node
         threading.Thread.__init__(self,daemon=True,name=name,target=self.__node_run)
         self.logger=logging.getLogger(self.name)
@@ -22,7 +23,7 @@ class Node(threading.Thread):
         self.port=port
         self.timeout=timeout
         self.refresh=refresh #how often we sync the remote node
-        self.poll=poll
+        self.poll_count=poll/refresh
         self.__lock=threading.Lock() #to ensure direct request and sync don't clobber
         self.__socket=None
         self.cfg=cfg
@@ -84,7 +85,7 @@ class Node(threading.Thread):
             }
 
             #get status if poll interval
-            if not (poll % self.poll): req.update(status=True) 
+            if not (poll % self.poll_count): req.update(status=True) 
             poll+=1
 
             #make request
@@ -98,7 +99,7 @@ class Node(threading.Thread):
                 if jobs: remote_seq=max(job['seq'] for job in jobs.values())
                 status=response.get('status',{})
                 updated=self.state.sync(jobs,status,remote_node=self.remote_node)
-            if responses: self.logger.debug('%s sent %s, updated %s, local_seq %s, remote_seq %s'%
-                (time.time(),len(sync),len(updated),local_seq,remote_seq)    )
+                self.logger.debug('%s sent %s, updated %s, local_seq %s, remote_seq %s'%
+                    (time.time(),len(sync),len(updated),local_seq,remote_seq)    )
             time.sleep(self.refresh) 
         if self.__socket:self.__socket.close()

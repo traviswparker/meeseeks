@@ -12,3 +12,5 @@
 ../meeseeks-box nodeB1.cfg &
 ../meeseeks-box nodeB2.cfg &
 ../meeseeks-box nodeB3.cfg &
+
+while true; do sleep 1; done

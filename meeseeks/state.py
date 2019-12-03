@@ -47,7 +47,7 @@ class State(threading.Thread):
                 'max_runtime'
             ]
 
-    def __init__(self,node=None,refresh=1,expire=60,expire_active_jobs=True):
+    def __init__(self,node=None,expire=60,expire_active_jobs=True,**cfg):
         self.node=node
         name='State'
         if self.node: name=self.node+'.'+name
@@ -56,7 +56,6 @@ class State(threading.Thread):
 
         self.shutdown=threading.Event()
 
-        self.refresh=refresh
         self.expire=expire
         self.expire_active_jobs=expire_active_jobs
     
@@ -209,4 +208,4 @@ class State(threading.Thread):
                     self.logger.warning('node %s not updated in %s seconds'%(node,self.expire))
                     self.update_node_status(node,online=False)
 
-            time.sleep(self.refresh)
+            time.sleep(1)

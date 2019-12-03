@@ -48,9 +48,8 @@ The config sections, objects, and defaults are as follows:
     }
 
     state: { #configures the state manager
-        refresh: 1 #how often in seconds we scan the state
-        expire: 60 #how long in seconds a job will persist without being updated
-                    #the state completed/failed/killed jobs will be available for this long
+        expire: 60  (how long in seconds a node or job will persist without being updated
+                     the state of completed/failed/killed jobs will be available for this long)
     }
 
     nodes: list of downstream nodes to connect to
@@ -58,8 +57,8 @@ The config sections, objects, and defaults are as follows:
             address: defaults to <nodename>
             port: 13700
             ssl: { ... }
-            refresh: 1 (how often in seconds we sync job state)
-            poll: 10 (how often in refresh periods we request cluster status)
+            refresh: 1 (how often in seconds we sync state)
+            poll: 10 (how often in seconds we request full status)
             timeout: 10 (timeout in seconds to connect/send/receive data)
         } , ... }
 

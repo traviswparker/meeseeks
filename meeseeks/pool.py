@@ -8,7 +8,7 @@ from .task import Task
 
 class Pool(threading.Thread):
     '''job queue manager'''
-    def __init__(self,node,pool,state,refresh=1,update=30,slots=None,max_runtime=None):
+    def __init__(self,node,pool,state,refresh=1,update=30,slots=None,max_runtime=None,**cfg):
         self.node=node #node we are running on
         self.pool=pool #pool we service
         self.state=state #state thread
@@ -16,7 +16,7 @@ class Pool(threading.Thread):
         self.update=update #how often we update the state of running/waiting jobs
         self.max_runtime=max_runtime
         self.slots=slots #number of job slots, or None if not limited
-        threading.Thread.__init__(self,daemon=True,name='Pool.'+self.pool,target=self.__pool_run)
+        threading.Thread.__init__(self,daemon=True,name=self.node+'.Pool.'+self.pool,target=self.__pool_run)
         self.logger=logging.getLogger(self.name)
         self.shutdown=threading.Event()
         self.__tasks={} #map of job_id -> Task object
