@@ -69,7 +69,6 @@ class Pool(threading.Thread):
     def __pool_run(self):
         while not self.shutdown.is_set():
             try:
-               
                 #get jobs assigned to this node and pool
                 pool_jobs=self.state.get(node=self.node,pool=self.pool)
                 for jid,job in pool_jobs.items():
@@ -77,6 +76,9 @@ class Pool(threading.Thread):
                     if jid in self.__tasks:
                         if job['state'] == 'killed': self.kill_job(jid,job)
                         self.check_job(jid,job)
+                    elif (job['state'] == 'running'): #job is supposed be running but isn't. node crash?
+                        self.logger.warning('job %s in state running but no task'%jid)
+                        self.state.update_job( jid, state='failed', error='Lost' )
                     #update queued/running jobs
                     if (job['state'] == 'running' or job['state'] == 'waiting') \
                         and (time.time()-job['ts'] > self.update):
@@ -98,4 +100,8 @@ class Pool(threading.Thread):
             time.sleep(self.refresh)
 
         #at shutdown, kill all jobs
-        for jid,job in self.__tasks.copy().items(): self.kill_job(jid,job)
+        pool_jobs=self.state.get(node=self.node,pool=self.pool)
+        for jid in list(self.__tasks.keys()):
+            job=pool_jobs[jid]
+            self.kill_job(jid,job)
+            self.check_job(jid,job)

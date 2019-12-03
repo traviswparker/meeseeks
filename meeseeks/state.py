@@ -11,7 +11,8 @@ class State(threading.Thread):
             id: [optional] manually set id of the job, a UUID will be generated if not specified
             pool: <required> the pool the job runs in
             args: <required> list of [ arg0 (executable) [,arg1,arg2,...] ] (command line for job)
-            nodelist: [optional] list of nodes to prefer
+            node: [optional] node to run on, job will fail if unavailable
+            nodelist: [optional] list of nodes to prefer, to set downstream routing
             stdin: filename to redirect stdin from
             stdout: filename to redirect stdout to
             stderr: filename to redirect stderr to
@@ -26,6 +27,7 @@ class State(threading.Thread):
             stdout: base64 encoded stdout after exit if not redirected to a file
             stdout: base64 encoded stderr after exit if not redirected to a file
             ts: update timestamp
+            seq: sync sequence number. Jobs with the highest seq are most recently updated on this node.
             submit_ts: submit timestamp
             start_ts: job start timestamp
             end_ts: job end timestamp
@@ -35,6 +37,7 @@ class State(threading.Thread):
     JOB_SPEC=[  'id',
                 'pool',
                 'args',
+                'node',
                 'nodelist',
                 'stdin',
                 'stderr',
@@ -62,6 +65,8 @@ class State(threading.Thread):
         self.__pool_status={} #map of [pool][node][open slots] for nodes we connect downstream to
         self.__node_status={} #map of node:last status
 
+        self.__seq=1 #update sequence number. Always increments.
+
         self.start()
 
     #these return a copy of the private state, use update_ methods to modify it
@@ -86,14 +91,15 @@ class State(threading.Thread):
                     if node in self.__pool_status[pool]:
                         del self.__pool_status[pool][node]
 
-    def get(self,node=None,pool=None,ts=None):
+    def get(self,node=None,pool=None,ts=None,seq=None):
         '''dump all state for a node/pool/or updated after a certain ts'''
         with self.__lock:
             try: 
                 return dict((jid,job.copy()) for (jid,job) in self.__jobs.items() if \
                     (   (not node or job['node']==node) and \
                         (not pool or job['pool']==pool) and \
-                        (not ts or job['ts']>ts) )
+                        (not ts or job['ts']>ts) and \
+                        (not seq or job['seq']>seq)     )
                 )
             except Exception as e: self.logger.warning(e,exc_info=True)
         return None
@@ -105,9 +111,10 @@ class State(threading.Thread):
             updated=[]
             try:
                 for jid,job in jobs.items():
-                    if jid not in self.__jobs or self.__jobs[jid]['ts'] <= job['ts']:
+                    if jid not in self.__jobs or self.__jobs[jid]['ts'] < job['ts']:
                         if not job.get('node'): job['node']=self.node #may not be set from client
-                        self.__jobs.setdefault(jid,{}).update(job)
+                        self.__jobs.setdefault(jid,{}).update(job,seq=self.__seq)
+                        self.__seq+=1
                         updated.append(jid)
             except Exception as e: self.logger.warning(e,exc_info=True)
         #update our status from incoming status data
@@ -136,7 +143,8 @@ class State(threading.Thread):
         with self.__lock:
             try:
                 if jid in self.__jobs: 
-                    self.__jobs[jid].update(ts=time.time(),**data)
+                    self.__jobs[jid].update(seq=self.__seq,ts=time.time(),**data)
+                    self.__seq+=1
                     return self.__jobs.get(jid)
                 else: return False
             except Exception as e: self.logger.warning(e,exc_info=True)
@@ -156,14 +164,15 @@ class State(threading.Thread):
                 if jid in self.__jobs: #job exists
                     self.logger.warning('add_job: %s exists'%jid)
                     return False
-                self.__jobs[jid]={  'ts':time.time(),           #last updated timestamp
-                                    'submit_ts':time.time(),    #submit timestamp
-                                    'pool':None,                #pool to run in 
-                                    'nodelist':[],              #list of nodes allowed to handle this job
-                                    'node':self.node,           #node we are on
-                                    'state':'new'               #job state
-                                }             
-                self.__jobs[jid].update(jobargs)
+                job={  'ts':time.time(),           #last updated timestamp
+                        'submit_ts':time.time(),    #submit timestamp
+                        'nodelist':[],              #list of nodes allowed to handle this job
+                        'state':'new'               #job state
+                    }             
+                job.update(jobargs,seq=self.__seq)
+                if not job.get('node'): job['node']=self.node #set node to be routed by this node
+                self.__jobs[jid]=job
+                self.__seq+=1
                 return jid
             except Exception as e: self.logger.warning(e,exc_info=True)
 
@@ -189,7 +198,8 @@ class State(threading.Thread):
                                     # try kicking it back to the first node for rescheduling
                                     self.__jobs[jid].update(node=job['nodelist'][0]) 
                                 #set job to failed, it might restart if it can
-                                self.__jobs[jid].update(ts=time.time(),state='failed',error='expired')
+                                self.__jobs[jid].update(seq=self.__seq,ts=time.time(),state='failed',error='expired')
+                                self.__seq+=1
                                 
                                 
                 except Exception as e: self.logger.warning(e,exc_info=True)

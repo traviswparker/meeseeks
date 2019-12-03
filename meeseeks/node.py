@@ -9,7 +9,7 @@ import socket, ssl
 class Node(threading.Thread):
     '''node poller/state sync thread
     initially we try to push all state to the node (sync_ts of 0)'''
-    def __init__(self,node,remote_node,state,address=None,port=13700,timeout=10,refresh=1,window=5,poll=10,**cfg):
+    def __init__(self,node,remote_node,state,address=None,port=13700,timeout=10,refresh=1,poll=10,**cfg):
         self.node=node #node we are running on 
         self.remote_node=remote_node #node we connect to
         self.state=state
@@ -22,7 +22,6 @@ class Node(threading.Thread):
         self.port=port
         self.timeout=timeout
         self.refresh=refresh #how often we sync the remote node
-        self.window=window #how far back (in refresh periouds) we request sync data
         self.poll=poll
         self.__lock=threading.Lock() #to ensure direct request and sync don't clobber
         self.__socket=None
@@ -64,33 +63,42 @@ class Node(threading.Thread):
 
     def __node_run(self):
         while not self.shutdown.is_set():
-            if not self.__socket: ts=poll=0 #reset ts to sync all state on reconnect
+            if not self.__socket: #reset sync on disconnect
+                poll=local_seq=remote_seq=0 
             
             #we sync updates for all nodes that are routed through the remote node
             #if self.node is None, we are are a client and always send updates
             node_status=self.state.get_node_status()
-            sync=dict( (jid,job) for (jid,job) in self.state.get(ts=ts).items() \
+            sync=dict( (jid,job) for (jid,job) in self.state.get(seq=local_seq).items() \
                         if self.node is None or \
                          ( job['node'] != self.node and job['node'] in \
                            node_status.get(self.remote_node,{}).get('seen',[] ) )
                     )
+            #get highest local sequence number
+            if sync: local_seq=max(job['seq'] for job in sync.values())
             #create the request
             req={
                 #dump all jobs for this node updated more recently than the last sync
                 'sync':sync,
-                'get':{'ts':ts}
+                'get':{'seq':remote_seq}
             }
-            if not (poll%self.poll): req.update(status=None) #get status if poll interval
+
+            #get status if poll interval
+            if not (poll % self.poll): req.update(status=True) 
             poll+=1
+
+            #make request
             responses=self.request([req])
             updated=None
+            #sync incoming state
             if responses:
                 response=responses[0]
-                updated=self.state.sync(
-                    response.get('get',{}),
-                    response.get('status',{}),
-                    remote_node=self.remote_node)
-            if responses: self.logger.debug('%s sent %s, updated %s'%(ts,len(sync),len(updated)))
-            ts=time.time()-(self.refresh*self.window) #set the next window to go back two refresh periods ago
+                jobs=response.get('get',{})
+                #get highest remote seq number
+                if jobs: remote_seq=max(job['seq'] for job in jobs.values())
+                status=response.get('status',{})
+                updated=self.state.sync(jobs,status,remote_node=self.remote_node)
+            if responses: self.logger.debug('%s sent %s, updated %s, local_seq %s, remote_seq %s'%
+                (time.time(),len(sync),len(updated),local_seq,remote_seq)    )
             time.sleep(self.refresh) 
         if self.__socket:self.__socket.close()

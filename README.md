@@ -60,7 +60,6 @@ The config sections, objects, and defaults are as follows:
             ssl: { ... }
             refresh: 1 (how often in seconds we sync job state)
             poll: 10 (how often in refresh periods we request cluster status)
-            window: 5 (how far back in refresh periods we request job state)
             timeout: 10 (timeout in seconds to connect/send/receive data)
         } , ... }
 
@@ -95,7 +94,8 @@ The config sections, objects, and defaults are as follows:
             "id": string , #job id, optional, MUST be unique. A UUID will be generated if id is omitted
             "pool": string , #pool name, REQUIRED.
             "args": [executable, arg, arg, arg] , #REQUIRED. the command to run and arguments. If subprocess.Popen likes it, it will work.
-        "nodelist": [nodename, ... ], #optional. A list of preferred nodes to use. See Job Routing. 
+            "node": node #optional. Strict node selection. Job will fail if node unavailable.
+            "nodelist": [nodename, ... ], #optional. A list of preferred nodes to use. See Job Routing. 
         
         "stdout": path, #optional, path to file to use for the job's stdout else returns the base64 encoded output
         "stderr": path, #optional, path to file to use for the job's stderr else returns the base64 encoded output
@@ -122,7 +122,7 @@ The config sections, objects, and defaults are as follows:
 
 # sync operation
 
-Each node periodically pulls node and pool slot availability from connected nodes. This status is not just the status of the peer but also all downstream nodes it has received status from. From this we can determine which nodes are reachable via the peer. Job status for all downstream nldes are synced from the upstream node, then updates are pulled from the downstream node.
+Each node periodically pulls node and pool slot availability from connected nodes. This status is not just the status of the peer but also all downstream nodes it has received status from. From this we can determine which nodes are reachable via the peer. Job status for all downstream nodes are synced from the upstream node, then updates are pulled from the downstream node.
 
 # job state values
 

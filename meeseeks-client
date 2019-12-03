@@ -54,11 +54,13 @@ try:
     logging.basicConfig(level=cfg.get('log',logging.INFO))
     client=Client(**cfg)
     jid=None
-
+    if cfg['wait'] or cmd == 'jobs':
+        while not client.get_node_status(): time.sleep(1) #wait for client to connect
     if cmd == 'submit':
-        pool,args=args[0],args[1:]
-        if cfg['wait']: jid=client.add_job(pool=pool,args=args,**cfg)
-        else: print(client.submit(pool=pool,args=args,**cfg))
+        pool,args,node=args[0],args[1:],None
+        if '@' in pool: pool,node=pool.split('@',1)
+        if cfg['wait']: jid=client.add_job(pool=pool,args=args,node=node,**cfg)
+        else: print(client.submit(pool=pool,args=args,node=node,**cfg))
     elif cmd == 'query': 
         if cfg['wait']: jid=args[0] #follow it too
         else: pretty_print(client.query(args[0]))
@@ -72,10 +74,9 @@ try:
     elif cmd == 'jobs': jid=True
     else: sys.exit(usage())
     if jid:
-        while not client.get_node_status(): time.sleep(1) #wait for client to connect
         if jid is True: pretty_print(client.get())
         else:
-            ts=0
+            seq=0 #if this changes, job has been updated
             while True: 
                 job=client.get_job(jid)
                 if not job: 
@@ -83,10 +84,10 @@ try:
                     break
                 #wait for the job to spawn, then exit if finished or not waiting for finish
                 if job['node']:
-                    if job['ts'] != ts: 
+                    if job['seq'] != seq: 
                         pretty_print({jid:job})
-                        ts=job['ts']
-                    if not cfg['wait'] or (job.get('state') in ['done','failed']): break
+                        seq=job['seq']
+                    if not cfg['wait'] or (job.get('state') in ['done','failed','killed']): break
                 time.sleep(cfg['refresh'])
 except Exception as e: 
     sys.exit(print (e,file=sys.stderr))
