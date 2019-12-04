@@ -79,7 +79,10 @@ class State(threading.Thread):
     
     def update_pool_status(self,pool,node,slots): 
         with self.__lock:
-            self.__pool_status.setdefault(pool,{})[node]=slots
+            if slots is False: #delete from status
+                if node in self.__pool_status.get(pool,{}):
+                    del self.__pool_status[pool][node]
+            else: self.__pool_status.setdefault(pool,{})[node]=slots
 
     def update_node_status(self,node,**node_status): 
         with self.__lock:

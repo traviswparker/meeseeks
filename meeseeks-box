@@ -5,19 +5,26 @@ import json
 import logging
 import signal
 
-from meeseeks.box import Box
+from meeseeks.box import Box, cmdline_parser
 
 def signal_handler(*args):
     logging.debug(args)
     box.shutdown.set()
 
-cfg={} 
-for f in sys.argv[1:]: 
+cfg,args=cmdline_parser(sys.argv[1:])
+
+for f in args: 
     try:
         with open(f) as fh: cfg.update(json.load(fh))
-    except Exception as e: print (e,file=sys.stderr)
+    except Exception as e:
+        print (e,file=sys.stderr)
+
 logging.basicConfig(**cfg.get('logging',{'level':logging.INFO}))
+
 box=Box(**cfg)
+
 signal.signal(signal.SIGINT,signal_handler)
 signal.signal(signal.SIGTERM,signal_handler)
-sys.exit( box.run() )
+signal.signal(signal.SIGHUP,signal_handler)
+
+box.run()

@@ -14,6 +14,26 @@ from .state import State
 from .node import Node, create_ssl_context
 from .pool import Pool
 
+def cmdline_parser(args):
+    #parse args
+    # cfg={key[.subkey]=value[,value..] args preceeding first non = argument}
+    cfg={}
+    for i,arg in enumerate(args):
+        if '=' in arg:
+            k,v=arg.split('=',1)
+            s=None #sub dict, for k.s=v arguments
+            if '.' in k:
+                k,sk=k.split('.',1)
+                s=cfg.setdefault(k,{})
+            if v.isnumeric(): v=int(v)
+            elif ',' in v: v=list(v.split(','))
+            if s is not None: s[sk]=v
+            else: cfg[k]=v
+        else: 
+            args=args[i:]
+            break
+    return cfg,args
+
 class RequestHandler(socketserver.StreamRequestHandler):
     '''control socket request handler'''
     def handle(self):
@@ -46,9 +66,13 @@ class RequestListener (socketserver.ThreadingMixIn, socketserver.TCPServer):
 
 class Box:
     '''meeseeks box main thread'''
-    def __init__(self,nodes={},pools={},**cfg):
+    def __init__(self,**cfg):
+        self.cfg=cfg
+        self.pools={}
+        self.nodes={}
 
         self.shutdown=threading.Event()
+        self.restart=threading.Event()
 
         #load config defaults
         self.defaults=cfg.get('defaults',{})
@@ -61,37 +85,60 @@ class Box:
 
         #init state
         scfg=self.defaults.copy()
-        scfg.update(cfg.get('state',{}))
+        scfg.update(self.cfg.get('state',{}))
         self.state=State(self.name,**scfg)
 
         #start listening
         lcfg=self.defaults.copy()
-        lcfg.update(cfg.get('listen',{})) #merge in listener specifc options
+        lcfg.update(self.cfg.get('listen',{})) #merge in listener specifc options
         self.listener=RequestListener( (  lcfg.get('address','localhost'),
                                             lcfg.get('port',13700)   ), 
-                            RequestHandler)
+                                        RequestHandler)
         if 'ssl' in lcfg: self.listener.ssl_context=create_ssl_context(lcfg['ssl'])
         self.listener.handler=self
         self.listener.server_thread=threading.Thread(target=self.listener.serve_forever)
         self.listener.server_thread.daemon=True
         self.listener.server_thread.start()
-        self.logger.info('listening on %s %s'%(self.listener.server_address,lcfg))
+        self.logger.info('listening on %s:%s'%self.listener.server_address)
 
-        #init pools
-        self.pools={} #pools we process jobs for
+    def apply_config(self):
+        #stop/init pools
+        pools=self.cfg.get('pools',{})
+        for p in self.pools.copy(): 
+            if p not in pools: self.stop_pool(p)
         for p in pools.keys():
-            pcfg=self.defaults.copy()
-            pcfg.update(pools[p])
-            self.logger.info('creating pool %s'%p)
-            self.pools[p]=Pool(self.name,p,self.state,**pcfg)
+            if p not in self.pools:
+                pcfg=self.defaults.copy()
+                pcfg.update(pools[p])
+                self.logger.info('creating pool %s'%p)
+                self.pools[p]=Pool(self.name,p,self.state,**pcfg)
 
-        #init node threads
-        self.nodes={} #nodes we sync
+        #stop/init nodes
+        nodes=self.cfg.get('nodes',{})
+        for n in self.nodes.copy(): 
+            if n not in nodes: self.stop_node(n)
         for n in nodes.keys():
-            ncfg=self.defaults.copy()
-            ncfg.update(nodes[n])
-            self.logger.info('adding node %s'%n)
-            self.nodes[n]=Node(self.name,n,self.state,**ncfg)
+            if n not in self.nodes:
+                ncfg=self.defaults.copy()
+                ncfg.update(nodes[n])
+                self.logger.info('adding node %s'%n)
+                self.nodes[n]=Node(self.name,n,self.state,**ncfg)
+
+    #stop all pool
+    def stop_pool(self,p):
+        pool=self.pools[p]
+        pool.shutdown.set()
+        self.logger.info('stopping %s'%pool.name)
+        pool.join()
+        del self.pools[p]
+
+    #stop all node
+    def stop_node(self,n):
+        node=self.nodes[n]
+        node.shutdown.set()
+        self.logger.info('stopping %s'%node.name)
+        node.join()
+        del self.nodes[n]
 
     def get_loadavg(self):
             with open('/proc/loadavg') as fh:
@@ -131,68 +178,61 @@ class Box:
         else: return random.choice( nodes )
 
     def run(self):
-        self.logger.info('running')
- 
-        while not self.shutdown.is_set(): #existence is pain!
-            #update our node status
-            self.state.update_node_status( self.name,
-                online=True,
-                ts=time.time(),
-                loadavg=self.get_loadavg() )
+        self.logger.info('starting')
+        while not self.shutdown.is_set():  #existence is pain!
+            self.apply_config()
+            self.restart.clear()
+            while not self.shutdown.is_set() and not self.restart.is_set():
+                #update our node status
+                self.state.update_node_status( self.name,
+                    online=True,
+                    ts=time.time(),
+                    loadavg=self.get_loadavg() )
 
-            #job routing logic
-            try:
-                #get jobs assigned to us
-                for jid,job in self.state.get(node=self.name).items():
-                    pool=job['pool']
-                    #if we can service this job, the pool thread will claim the job so do nothing
-                    if pool not in self.pools: 
-                        try:
-                            #we need to select a node that has the job's pool
-                            nodes=list(self.state.get_pool_status().get(pool,{}).keys())
-                            if not nodes: continue #we can't do anything with this job
+                #job routing logic
+                try:
+                    #get jobs assigned to us
+                    for jid,job in self.state.get(node=self.name).items():
+                        pool=job['pool']
+                        #if we can service this job, the pool thread will claim the job so do nothing
+                        if pool not in self.pools: 
+                            try:
+                                #we need to select a node that has the job's pool
+                                nodes=list(self.state.get_pool_status().get(pool,{}).keys())
+                                if not nodes: continue #we can't do anything with this job
 
-                            #filter by the job's nodelist if set
-                            if job['nodelist']: 
-                                in_list_nodes=[node for node in nodes if node in job['nodelist']]
-                                #if we got a result, use it
-                                #we may not if the nodelist only controlled the upstream routing
-                                #so if we got nothing based on the node list use all pool nodes
-                                if in_list_nodes: nodes=in_list_nodes
+                                #filter by the job's nodelist if set
+                                if job['nodelist']: 
+                                    in_list_nodes=[node for node in nodes if node in job['nodelist']]
+                                    #if we got a result, use it
+                                    #we may not if the nodelist only controlled the upstream routing
+                                    #so if we got nothing based on the node list use all pool nodes
+                                    if in_list_nodes: nodes=in_list_nodes
 
-                            #select a node the job
-                            if self.defaults.get('use_loadavg'): node=self.select_by_loadavg(nodes)
-                            else: node=self.select_by_available(pool,nodes)
+                                #select a node the job
+                                if self.defaults.get('use_loadavg'): node=self.select_by_loadavg(nodes)
+                                else: node=self.select_by_available(pool,nodes)
 
-                            #route the job
-                            self.logger.debug('routing %s for %s to %s'%(jid,pool,node))
-                            self.state.update_job(jid,node=node)
-                            
-                        except Exception as e: self.logger.warning(e,exc_info=True)
-                
-                time.sleep(1)
+                                #route the job
+                                self.logger.debug('routing %s for %s to %s'%(jid,pool,node))
+                                self.state.update_job(jid,node=node)
+                                
+                            except Exception as e: self.logger.warning(e,exc_info=True)
+                    
+                    time.sleep(1)
 
-            except Exception as e: 
-                self.logger.error(e,exc_info=True)
-                self.shutdown.set()
+                except Exception as e: 
+                    self.logger.error(e,exc_info=True)
+                    self.shutdown.set()
 
         self.logger.info('shutting down')
+        #will stop all pools/nodes
+        self.cfg.update(pools={},nodes={})
+        self.apply_config() 
         try:
             self.listener.shutdown()
             self.listener.server_thread.join()
         except Exception as e: self.logger.error(e,exc_info=True)
-
-        #stop all pools
-        for pool in self.pools.values():
-            pool.shutdown.set()
-            self.logger.info('stopping %s'%pool.name)
-            pool.join()
-
-        #stop all nodes
-        for node in self.nodes.values():
-            node.shutdown.set()
-            self.logger.info('stopping %s'%node.name)
-            node.join()
 
         #stop state manager
         self.state.shutdown.set()
@@ -240,5 +280,13 @@ class Box:
         if 'options' in request:
             if 'pretty' in request['options'] and request['options']['pretty']:
                 response = json.dumps(response, sort_keys=True, indent=4)
+
+        #get/set config
+        if 'config' in request:
+            cfg=request['config']
+            if cfg: #if changes were pushed
+                self.cfg.update(request['config'])
+                self.restart.set() #main loop breaks and apply_config is called
+            response['config']=self.cfg 
 
         return response

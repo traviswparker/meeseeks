@@ -117,6 +117,8 @@ The config sections, objects, and defaults are as follows:
       "kill": job_id  #kills a job. 
         response will be job dict, or false if job_id does not exist
 
+      "config": {...} #push a new configuration to a node, response is current config
+
     } ]
 
 # sync operation

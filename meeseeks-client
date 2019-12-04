@@ -6,6 +6,7 @@ import json
 import time
 
 from meeseeks import Client
+from meeseeks.box import cmdline_parser
 
 def pretty_print(d): print (json.dumps(d, sort_keys=True, indent=4))
 
@@ -39,27 +40,12 @@ def usage():
 
 """%sys.argv[0])
 
-#parse args
-# cfg={key[.subkey]=value[,value..] args preceeding first non = argument}
 # cmd=first non cfg argument
 # args=remaining arguments
 cfg={ 'address':'localhost' } 
 try:
-    cmd,args=None,[]
-    for i,arg in enumerate(sys.argv[1:]):
-        if '=' in arg:
-            k,v=arg.split('=',1)
-            s=None #sub dict, for k.s=v arguments
-            if '.' in k:
-                k,sk=k.split('.',1)
-                s=cfg.setdefault(k,{})
-            if v.isnumeric(): v=int(v)
-            elif ',' in v: v=list(v.split(','))
-            if s is not None: s[sk]=v
-            else: cfg[k]=v
-        else: 
-            cmd,args=sys.argv[i+1],sys.argv[i+2:] #end of options
-            break
+    cfg,args=cmdline_parser(sys.argv[1:])
+    cmd,args=args[0],args[1:] #end of options
     logging.basicConfig(level=cfg.get('log',logging.INFO))
     logging.debug('%s %s %s'%(cfg,cmd,args))
     client=Client(**cfg) #create client and connect

@@ -99,9 +99,15 @@ class Pool(threading.Thread):
 
             time.sleep(self.refresh)
 
-        #at shutdown, kill all jobs
+        #at shutdown, kill all jobs, mark as failed
         pool_jobs=self.state.get(node=self.node,pool=self.pool)
         for jid in list(self.__tasks.keys()):
             job=pool_jobs[jid]
             self.kill_job(jid,job)
-            self.check_job(jid,job)
+            self.state.update_job( jid,
+                state='failed',
+                error='shutdown',
+                pid=None )
+
+        #remove self from pool status
+        self.state.update_pool_status(self.pool,self.node,False)
