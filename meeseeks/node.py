@@ -23,7 +23,7 @@ def create_ssl_context(cfg):
 class Node(threading.Thread):
     '''node poller/state sync thread
     initially we try to push all state to the node (sync_ts of 0)'''
-    def __init__(self,node,remote_node,state,address=None,port=13700,timeout=10,refresh=1,poll=10,**cfg):
+    def __init__(self,node,remote_node,state,**cfg):
         self.node=node #node we are running on 
         self.remote_node=remote_node #node we connect to
         self.state=state
@@ -32,17 +32,20 @@ class Node(threading.Thread):
         if self.remote_node: name+='.'+self.remote_node
         threading.Thread.__init__(self,daemon=True,name=name,target=self.__node_run)
         self.logger=logging.getLogger(self.name)
-        self.address=address
-        if not self.address: self.address=self.node
+        self.__lock=threading.Lock() #to ensure direct request and sync don't clobber
+        self.__socket=None
+        self.shutdown=threading.Event()
+        self.config(**cfg)
+        self.start()
+
+    def config(self,address=None,port=13700,timeout=10,refresh=1,poll=10,**cfg):
+        if address: self.address=address
+        else: self.address=self.node
         self.port=port
         self.timeout=timeout
         self.refresh=refresh #how often we sync the remote node
         self.poll_count=poll/refresh
-        self.__lock=threading.Lock() #to ensure direct request and sync don't clobber
-        self.__socket=None
         self.cfg=cfg
-        self.shutdown=threading.Event()
-        self.start()
 
     def request(self,requests):
         with self.__lock:

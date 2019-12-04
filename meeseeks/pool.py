@@ -8,19 +8,23 @@ from .task import Task
 
 class Pool(threading.Thread):
     '''job queue manager'''
-    def __init__(self,node,pool,state,refresh=1,update=30,slots=None,max_runtime=None,**cfg):
+    def __init__(self,node,pool,state,**cfg):
         self.node=node #node we are running on
         self.pool=pool #pool we service
         self.state=state #state thread
-        self.refresh=refresh #how often we update the job q
-        self.update=update #how often we update the state of running/waiting jobs
-        self.max_runtime=max_runtime
-        self.slots=slots #number of job slots, or None if not limited
         threading.Thread.__init__(self,daemon=True,name=self.node+'.Pool.'+self.pool,target=self.__pool_run)
         self.logger=logging.getLogger(self.name)
         self.shutdown=threading.Event()
         self.__tasks={} #map of job_id -> Task object
+        self.config(**cfg)
         self.start()
+
+    def config(self,refresh=1,update=30,slots=0,max_runtime=0,**cfg):
+        self.refresh=refresh #how often we update the job q
+        self.update=update #how often we update the state of running/waiting jobs
+        self.max_runtime=max_runtime
+        if slots: self.slots=slots #number of job slots, or None if not limited
+        else: self.slots=None
 
     def start_job(self,jid):
         job=self.state.get_job(jid)
@@ -93,7 +97,9 @@ class Pool(threading.Thread):
             except Exception as e: self.logger.error(e,exc_info=True)
             
             #update pool status with free slots
-            if self.slots: slots_free=self.slots-len(self.__tasks)
+            if self.slots: 
+                slots_free=self.slots-len(self.__tasks)
+                if slots_free < 0: slots_free=0 #can happen if slots changed
             else: slots_free=None #no slots set
             self.state.update_pool_status(self.pool,self.node,slots_free)
 

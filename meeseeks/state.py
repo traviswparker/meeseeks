@@ -47,26 +47,24 @@ class State(threading.Thread):
                 'max_runtime'
             ]
 
-    def __init__(self,node=None,expire=60,expire_active_jobs=True,**cfg):
+    def __init__(self,node=None,**cfg):
         self.node=node
         name='State'
         if self.node: name=self.node+'.'+name
         threading.Thread.__init__(self,daemon=True,name=name,target=self.__state_run)
         self.logger=logging.getLogger(self.name)
-
         self.shutdown=threading.Event()
-
-        self.expire=expire
-        self.expire_active_jobs=expire_active_jobs
-    
         self.__lock=threading.Lock() #lock on __jobs dict
         self.__jobs={} #(partial) cluster job state, this is private because we lock during any changes
         self.__pool_status={} #map of [pool][node][open slots] for nodes we connect downstream to
         self.__node_status={} #map of node:last status
-
         self.__seq=1 #update sequence number. Always increments.
-
+        self.config(**cfg)
         self.start()
+
+    def config(self,expire=60,expire_active_jobs=True,**cfg):
+        self.expire=expire
+        self.expire_active_jobs=expire_active_jobs
 
     #these return a copy of the private state, use update_ methods to modify it
     def get_pool_status(self): 

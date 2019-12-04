@@ -48,6 +48,7 @@ class Client(State):
     def kill(self,jid): return self.__node.request([{'kill':jid}])[0]['kill']
     def ls(self,**kwargs): return self.__node.request([{'ls':kwargs}])[0]['ls']
     def status(self): return self.__node.request([{'status':None}])[0]['status']
+    def request(self,req): return self.__node.request([req])[0] #for sending raw request
     
     def close(self): 
         #stop the node and state threads

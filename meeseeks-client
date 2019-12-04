@@ -86,6 +86,9 @@ try:
                 time.sleep(cfg.get('refresh'))
         else: pretty_print(client.status()['pools'])
     elif cmd == 'ls': pretty_print(client.ls(**cfg))
+    elif cmd == 'config': 
+        c=cmdline_parser(args)[0]
+        pretty_print(client.request(dict(config=c)))
     else: sys.exit(usage())
     #refreshing on jobs
     if jids:

@@ -16,19 +16,19 @@ from .pool import Pool
 
 def cmdline_parser(args):
     #parse args
-    # cfg={key[.subkey]=value[,value..] args preceeding first non = argument}
+    # cfg={key[.subkey.s]=value[,value..] args preceeding first non = argument}
     cfg={}
     for i,arg in enumerate(args):
         if '=' in arg:
             k,v=arg.split('=',1)
-            s=None #sub dict, for k.s=v arguments
-            if '.' in k:
+            c=cfg #may be sub dict, for k.s=v arguments
+            while '.' in k: #walk subkeys
                 k,sk=k.split('.',1)
-                s=cfg.setdefault(k,{})
+                c,k=c.setdefault(k,{}),sk
             if v.isnumeric(): v=int(v)
             elif ',' in v: v=list(v.split(','))
-            if s is not None: s[sk]=v
-            else: cfg[k]=v
+            elif not v: v={}
+            c[k]=v
         else: 
             args=args[i:]
             break
@@ -68,61 +68,49 @@ class Box:
     '''meeseeks box main thread'''
     def __init__(self,**cfg):
         self.cfg=cfg
+        self.state=self.listener=None
         self.pools={}
         self.nodes={}
-
         self.shutdown=threading.Event()
-        self.restart=threading.Event()
-
-        #load config defaults
-        self.defaults=cfg.get('defaults',{})
-        
+        self.restart=threading.Event()        
         #get our nodename
         self.name=cfg.get('name',socket.gethostname())
-
         #set up logger
         self.logger=logging.getLogger(self.name)
+
+    def apply_config(self):
+        #load config defaults
+        self.defaults=self.cfg.get('defaults',{})
 
         #init state
         scfg=self.defaults.copy()
         scfg.update(self.cfg.get('state',{}))
-        self.state=State(self.name,**scfg)
+        if not self.state: self.state=State(node=self.name,**scfg)
+        else: self.state.config(**scfg)
 
-        #start listening
-        lcfg=self.defaults.copy()
-        lcfg.update(self.cfg.get('listen',{})) #merge in listener specifc options
-        self.listener=RequestListener( (  lcfg.get('address','localhost'),
-                                            lcfg.get('port',13700)   ), 
-                                        RequestHandler)
-        if 'ssl' in lcfg: self.listener.ssl_context=create_ssl_context(lcfg['ssl'])
-        self.listener.handler=self
-        self.listener.server_thread=threading.Thread(target=self.listener.serve_forever)
-        self.listener.server_thread.daemon=True
-        self.listener.server_thread.start()
-        self.logger.info('listening on %s:%s'%self.listener.server_address)
-
-    def apply_config(self):
         #stop/init pools
         pools=self.cfg.get('pools',{})
         for p in self.pools.copy(): 
             if p not in pools: self.stop_pool(p)
         for p in pools.keys():
+            pcfg=self.defaults.copy()
+            pcfg.update(pools[p])
             if p not in self.pools:
-                pcfg=self.defaults.copy()
-                pcfg.update(pools[p])
                 self.logger.info('creating pool %s'%p)
                 self.pools[p]=Pool(self.name,p,self.state,**pcfg)
+            else: self.pools[p].config(**pcfg)
 
         #stop/init nodes
         nodes=self.cfg.get('nodes',{})
         for n in self.nodes.copy(): 
             if n not in nodes: self.stop_node(n)
         for n in nodes.keys():
+            ncfg=self.defaults.copy()
+            ncfg.update(nodes[n])
             if n not in self.nodes:
-                ncfg=self.defaults.copy()
-                ncfg.update(nodes[n])
                 self.logger.info('adding node %s'%n)
                 self.nodes[n]=Node(self.name,n,self.state,**ncfg)
+            else: self.nodes[n].config(**ncfg)
 
     #stop all pool
     def stop_pool(self,p):
@@ -180,7 +168,24 @@ class Box:
     def run(self):
         self.logger.info('starting')
         while not self.shutdown.is_set():  #existence is pain!
+
+            #apply state/pool/node config
             self.apply_config()
+
+            #start listener
+            if not self.listener:
+                lcfg=self.defaults.copy()
+                lcfg.update(self.cfg.get('listen',{})) #merge in listener specifc options
+                self.listener=RequestListener( (  lcfg.get('address','localhost'),
+                                                    lcfg.get('port',13700)   ), 
+                                                RequestHandler)
+                if 'ssl' in lcfg: self.listener.ssl_context=create_ssl_context(lcfg['ssl'])
+                self.listener.handler=self
+                self.listener.server_thread=threading.Thread(target=self.listener.serve_forever)
+                self.listener.server_thread.daemon=True
+                self.listener.server_thread.start()
+                self.logger.info('listening on %s:%s'%self.listener.server_address)
+
             self.restart.clear()
             while not self.shutdown.is_set() and not self.restart.is_set():
                 #update our node status
@@ -229,10 +234,9 @@ class Box:
         #will stop all pools/nodes
         self.cfg.update(pools={},nodes={})
         self.apply_config() 
-        try:
-            self.listener.shutdown()
-            self.listener.server_thread.join()
-        except Exception as e: self.logger.error(e,exc_info=True)
+
+        self.listener.shutdown()
+        self.listener.server_thread.join()
 
         #stop state manager
         self.state.shutdown.set()
