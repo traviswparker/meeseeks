@@ -18,7 +18,8 @@ def cmdline_parser(args):
     #parse args
     # cfg={key[.subkey.s]=value[,value..] args preceeding first non = argument}
     cfg={}
-    for i,arg in enumerate(args):
+    i=0
+    for arg in args:
         if '=' in arg:
             k,v=arg.split('=',1)
             c=cfg #may be sub dict, for k.s=v arguments
@@ -29,9 +30,9 @@ def cmdline_parser(args):
             elif ',' in v: v=list(v.split(','))
             elif not v: v={}
             c[k]=v
-        else: 
-            args=args[i:]
-            break
+        else: break #stop at first arg without =
+        i+=1
+    args=args[i:]
     return cfg,args
 
 class RequestHandler(socketserver.StreamRequestHandler):
@@ -199,8 +200,16 @@ class Box:
                     #get jobs assigned to us
                     for jid,job in self.state.get(node=self.name).items():
                         pool=job['pool']
+                        #special pool for pushing remote config
+                        if pool == '__config':
+                            if job['state'] == 'new':
+                                self.logger.debug('got new __config job %s: %s'%(jid,job))
+                                if job['args']: #if changes were pushed
+                                    self.cfg.update(job['args'])
+                                    self.state.update_job(jid,args=self.cfg,state='done')
+                                    self.restart.set() #main loop breaks and apply_config is called
                         #if we can service this job, the pool thread will claim the job so do nothing
-                        if pool not in self.pools: 
+                        elif pool not in self.pools: 
                             try:
                                 #we need to select a node that has the job's pool
                                 nodes=list(self.state.get_pool_status().get(pool,{}).keys())
@@ -289,6 +298,7 @@ class Box:
         if 'config' in request:
             cfg=request['config']
             if cfg: #if changes were pushed
+                self.logger.debug('got config request: %s'%cfg)
                 self.cfg.update(request['config'])
                 self.restart.set() #main loop breaks and apply_config is called
             response['config']=self.cfg 

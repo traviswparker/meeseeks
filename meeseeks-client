@@ -87,8 +87,12 @@ try:
         else: pretty_print(client.status()['pools'])
     elif cmd == 'ls': pretty_print(client.ls(**cfg))
     elif cmd == 'config': 
-        c=cmdline_parser(args)[0]
-        pretty_print(client.request(dict(config=c)))
+        c,nodes=cmdline_parser(args)
+        if nodes:
+            for node in nodes: 
+                print(client.submit(pool='__config',node=node,args=c))
+        else: pretty_print(client.request(dict(config=c))) #peer config push
+
     else: sys.exit(usage())
     #refreshing on jobs
     if jids:

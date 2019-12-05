@@ -6,7 +6,7 @@ The meeseeks-box agent runs on each node.
 Head, routing, compute, doesn't matter. It's all the same. 
 Just don't connect the nodes in cycles. 
 
-    $ meeseeks-box [config files..]
+    $ ./meeseeks-box [config files..]
 
 # configuration 
 
@@ -71,6 +71,13 @@ The config sections, objects, and defaults are as follows:
         } , ... }
     }
 
+config can also be provided on the command line using key.key.key=value
+
+example: 
+
+    $ ./meeseeks-box name=master defaults.refresh=10 state.expire=300 nodes.n11.address=10.0.0.11 nodes.n12.address=10.0.0.12
+
+
 # JSON request format
 
  connect with something like
@@ -117,7 +124,10 @@ The config sections, objects, and defaults are as follows:
       "kill": job_id  #kills a job. 
         response will be job dict, or false if job_id does not exist
 
-      "config": {...} #push a new configuration to a node, response is current config
+      "config": {...} #push a new configuration (if provided) to the node, response is current config
+                      #configuration can be pushed to remote nodes via a job in the __config pool
+                      #example: {"submit":{"pool":"__config","node":"<node>","args":{<config>}}}
+                      #when state is 'done', job args will reflect current config
 
     } ]
 
@@ -136,3 +146,39 @@ running: job is running. pid will be set. node is set to the node the job is run
 done: job is finished. stdout and stderr will contain output
 
 failed: job failed. rc will be set, or error will be set. If the job expired, node may be set back to the submit node.
+
+
+# meeseeks-client
+
+    ./meeseeks-client [options] <command>
+
+    commands are:
+        submit <pool[@node]> <executable> [args....]
+            options for submit:
+                nodelist= (list of nodes to route job through)
+                stdin= stdout= stderr= (redirect job in/out/err to files named)
+                restart_on_done= (1=restart)
+                restart_on_fail= (1=restart)
+                max_runtime= (max runtime of job)
+
+        ls (list job ids)
+            options for ls:
+                node= pool= ts= (query filters for jobs)
+
+        get [jobid] [jobid] ... (get all or specified jobs)
+            options for get:
+                node= pool= ts= (query filters for jobs)
+
+        kill <jobid> [jobid...]
+
+        status (prints all node status)
+
+        pools (prints all pools and free slots)
+
+        config [key=value... ] [remote-node]
+            sends configuration to the directly connected or remote nodes 
+
+    generic options are: 
+        address= (default localhost)
+        port= (defult 13700)
+        refresh= (interval to continuously refresh status until no jobs left)
