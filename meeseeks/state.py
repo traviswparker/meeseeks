@@ -65,12 +65,15 @@ class State(threading.Thread):
         self.start()
 
     def config(self,expire=60,expire_active_jobs=True,history=None,**cfg):
-        self.expire=expire
-        self.expire_active_jobs=expire_active_jobs
-        if history:
-            try: self.hist_fh=open(history,'a')
-            except Exception as e: self.logger.warning('%s:%s'%(history,e))
-        elif self.hist_fh: self.hist_fh.close()
+        with self.__lock:
+            self.expire=expire
+            self.expire_active_jobs=expire_active_jobs
+            if history:
+                try: self.hist_fh=open(history,'a')
+                except Exception as e: self.logger.warning('%s:%s'%(history,e))
+            elif self.hist_fh: 
+                self.hist_fh.close()
+                self.hist_fh=None
 
     def write_history(self,jid):
         if self.hist_fh:
