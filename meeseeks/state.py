@@ -4,6 +4,7 @@ import time
 import threading
 import logging
 import uuid
+import json
 
 class State(threading.Thread):
     '''cluster state interface
@@ -59,12 +60,23 @@ class State(threading.Thread):
         self.__pool_status={} #map of [pool][node][open slots] for nodes we connect downstream to
         self.__node_status={} #map of node:last status
         self.__seq=1 #update sequence number. Always increments.
+        self.hist_fh=None
         self.config(**cfg)
         self.start()
 
-    def config(self,expire=60,expire_active_jobs=True,**cfg):
+    def config(self,expire=60,expire_active_jobs=True,history=None,**cfg):
         self.expire=expire
         self.expire_active_jobs=expire_active_jobs
+        if history:
+            try: self.hist_fh=open(history,'a')
+            except Exception as e: self.logger.warning('%s:%s'%(history,e))
+        elif self.hist_fh: self.hist_fh.close()
+
+    def write_history(self,jid):
+        if self.hist_fh:
+            json.dump({jid:self.__jobs[jid]},self.hist_fh)
+            self.hist_fh.write('\n')
+            self.hist_fh.flush()
 
     #these return a copy of the private state, use update_ methods to modify it
     def get_pool_status(self): 
@@ -128,6 +140,10 @@ class State(threading.Thread):
             for pool,nodes in status.get('pools',{}).items():
                 for node,slots in nodes.items(): self.update_pool_status(pool,node,slots)
         except Exception as e: self.logger.warning(e,exc_info=True)
+        #if updated job is finished, write it to history
+        for jid in updated:
+            if self.__jobs[jid]['state'] in ['done','killed','failed']: 
+                self.write_history(jid)
         #return updated items
         return updated
 
@@ -145,6 +161,9 @@ class State(threading.Thread):
                 if jid in self.__jobs: 
                     self.__jobs[jid].update(seq=self.__seq,ts=time.time(),**data)
                     self.__seq+=1
+                    #if done, write job to history
+                    if self.__jobs[jid]['state'] in ['done','killed','failed']:
+                        self.write_history(jid)
                     return self.__jobs.get(jid)
                 else: return False
             except Exception as e: self.logger.warning(e,exc_info=True)
@@ -199,6 +218,7 @@ class State(threading.Thread):
                                     self.__jobs[jid].update(node=job['nodelist'][0]) 
                                 #set job to failed, it might restart if it can
                                 self.__jobs[jid].update(seq=self.__seq,ts=time.time(),state='failed',error='expired')
+                                self.write_history(jid)
                                 self.__seq+=1
                                 
                                 
@@ -210,3 +230,5 @@ class State(threading.Thread):
                     self.update_node_status(node,online=False)
 
             time.sleep(1)
+
+        if self.hist_fh: self.hist_fh.close()
