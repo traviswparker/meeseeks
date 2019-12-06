@@ -130,9 +130,10 @@ class Box:
         del self.nodes[n]
 
     def get_loadavg(self):
+        try:
             with open('/proc/loadavg') as fh:
-                try: return float(fh.readline().split()[0])
-                except Exception as e: self.logger.warning(e,exc_info=True)
+                return float(fh.readline().split()[0])
+        except: return 0.0 #only works on linux... ignore it.
 
     def biased_random(self,l,reverse=False):
         #this is probably a stupid way to pick a random item while favoring the lowest sorted items 
