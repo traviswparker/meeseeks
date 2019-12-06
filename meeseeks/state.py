@@ -66,7 +66,7 @@ class State(threading.Thread):
 
     def config(self,expire=60,expire_active_jobs=True,history=None,**cfg):
         with self.__lock:
-            self.expire=expire
+            if expire: self.expire=int(expire)
             self.expire_active_jobs=expire_active_jobs
             if history:
                 try: self.hist_fh=open(history,'a')

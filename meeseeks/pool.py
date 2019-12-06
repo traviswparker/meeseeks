@@ -20,10 +20,11 @@ class Pool(threading.Thread):
         self.start()
 
     def config(self,refresh=1,update=30,slots=0,max_runtime=0,**cfg):
-        self.refresh=refresh #how often we update the job q
-        self.update=update #how often we update the state of running/waiting jobs
-        self.max_runtime=max_runtime
-        if slots: self.slots=slots #number of job slots, or None if not limited
+        if refresh: self.refresh=int(refresh) #how often we update the job q
+        if update: self.update=int(update) #how often we update the state of running/waiting jobs
+        if max_runtime: self.max_runtime=int(max_runtime)
+        else: self.max_runtime=None
+        if slots: self.slots=int(slots) #number of job slots, or None if not limited
         else: self.slots=None
 
     def start_job(self,jid):

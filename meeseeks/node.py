@@ -41,10 +41,10 @@ class Node(threading.Thread):
     def config(self,address=None,port=13700,timeout=10,refresh=1,poll=10,**cfg):
         if address: self.address=address
         else: self.address=self.node
-        self.port=port
-        self.timeout=timeout
-        self.refresh=refresh #how often we sync the remote node
-        self.poll_count=poll/refresh
+        if port: self.port=int(port)
+        if timeout: self.timeout=int(timeout)
+        if refresh: self.refresh=int(refresh) #how often we sync the remote node
+        if poll: self.poll_count=int(poll)/self.refresh
         self.cfg=cfg
 
     def request(self,requests):
