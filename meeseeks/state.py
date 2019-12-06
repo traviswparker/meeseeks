@@ -17,14 +17,16 @@ class State(threading.Thread):
             stdin: filename to redirect stdin from
             stdout: filename to redirect stdout to
             stderr: filename to redirect stderr to
-            restart_on_done: if true, job will be restart on exit
-            restart_on_fail: if true, job will be reassigned to the nodelist if provided and restart on failure
-            max_runtime: job maximum runtime in seconds
+            restart: if true, job will be restart on exit
+            restries: count of times to restart a failed job. 
+                      job will be reassigned to the start of the nodelist if provided
+            runtime: job maximum runtime in seconds
+            hold: if true, job will not run until cleared
         job attributes:
             node: the node the job is assigned to
-            state: the job state (new,waiting,running,done,failed)
+            state: the job state (new,waiting,running,done,failed,killed)
             rc: exit code if job done/failed
-            error: error details if job did not spawn
+            error: error details if job did not spawn or exit
             stdout: base64 encoded stdout after exit if not redirected to a file
             stdout: base64 encoded stderr after exit if not redirected to a file
             ts: update timestamp
@@ -32,24 +34,35 @@ class State(threading.Thread):
             submit_ts: submit timestamp
             start_ts: job start timestamp
             end_ts: job end timestamp
+            start_count: count of time job has started
+            fail_count: count of times job has failed
     '''
 
     #only allow these keys to prevent shenanigans
-    JOB_SPEC=[  'id',
+    JOB_SPEC=[  
+                'id',
                 'pool',
                 'args',
+                'state',
                 'node',
                 'nodelist',
                 'stdin',
                 'stderr',
                 'stdout',
-                'restart_on_done',
-                'restart_on_fail',
-                'max_runtime'
+                'restart',
+                'retries',
+                'runtime',
+                'hold'
             ]
 
-    def __init__(self,node=None,**cfg):
-        self.node=node
+    #states of inactive jobs
+    JOB_INACTIVE=['done','failed','killed']
+
+    #states of active jobs
+    JOB_ACTIVE=['waiting','running']
+
+    def __init__(self,__node=None,**cfg):
+        self.node=__node
         name='State'
         if self.node: name=self.node+'.'+name
         threading.Thread.__init__(self,daemon=True,name=name,target=self.__state_run)
@@ -76,7 +89,7 @@ class State(threading.Thread):
                 self.hist_fh=None
 
     def write_history(self,jid):
-        if self.hist_fh:
+        if self.__jobs[jid]['state'] in self.JOB_INACTIVE and self.hist_fh:
             json.dump({jid:self.__jobs[jid]},self.hist_fh)
             self.hist_fh.write('\n')
             self.hist_fh.flush()
@@ -144,9 +157,7 @@ class State(threading.Thread):
                 for node,slots in nodes.items(): self.update_pool_status(pool,node,slots)
         except Exception as e: self.logger.warning(e,exc_info=True)
         #if updated job is finished, write it to history
-        for jid in updated:
-            if self.__jobs[jid]['state'] in ['done','killed','failed']: 
-                self.write_history(jid)
+        for jid in updated: self.write_history(jid)
         #return updated items
         return updated
 
@@ -158,15 +169,15 @@ class State(threading.Thread):
             except Exception as e: self.logger.warning(e,exc_info=True)
     
     def update_job(self,jid,**data):
-        '''update job jid with k/v in data'''
+        '''update job jid with k/v in data
+        this is ONLY to be used by the agent as no sanity checks are performed'''
         with self.__lock:
             try:
                 if jid in self.__jobs: 
                     self.__jobs[jid].update(seq=self.__seq,ts=time.time(),**data)
                     self.__seq+=1
                     #if done, write job to history
-                    if self.__jobs[jid]['state'] in ['done','killed','failed']:
-                        self.write_history(jid)
+                    self.write_history(jid)
                     return self.__jobs.get(jid)
                 else: return False
             except Exception as e: self.logger.warning(e,exc_info=True)
@@ -175,25 +186,42 @@ class State(threading.Thread):
         '''return list of job ids'''
         return list(self.get(**kwargs).keys())
         
-    def add_job(self,**jobargs):
-        '''add a job, see job spec for proper key=values'''
+    def submit_job(self,**jobargs):
+        '''add or change a job, see job spec for proper key=values'''
         with self.__lock:
             try:
+                #if a new state is provided
+                state=jobargs.get('state')
                 #filter job spec keys
-                jobargs=dict((k,v) for (k,v) in jobargs.items() if k in self.JOB_SPEC)
-                if 'pool' not in jobargs or 'args' not in jobargs: return False #jobs have to have a command and pool to run in
+                jobargs=dict((k,v) for (k,v) in jobargs.items() if (v is not None) and (k in self.JOB_SPEC))
                 jid=jobargs.get('id',str(uuid.uuid1())) #use preset id or generate one
-                if jid in self.__jobs: #job exists
-                    self.logger.warning('add_job: %s exists'%jid)
-                    return False
-                job={  'ts':time.time(),           #last updated timestamp
-                        'submit_ts':time.time(),    #submit timestamp
-                        'nodelist':[],              #list of nodes allowed to handle this job
-                        'state':'new'               #job state
-                    }             
-                job.update(jobargs,seq=self.__seq)
-                if not job.get('node'): job['node']=self.node #set node to be routed by this node
+                job=self.__jobs.get(jid)
+                if job: #modifying an existing job
+                    del jobargs['id']
+                    #do sanity checks on state changes
+                    #inactive jobs can only restarted
+                    if job['state'] in self.JOB_INACTIVE:
+                        if 'state' in jobargs and jobargs['state']!='new': del jobargs['state']
+                    #other jobs can only killed, and active jobs cannot be moved to another pool/node
+                    else:
+                        if 'state' in jobargs and jobargs['state']!='killed': del jobargs['state']
+                        if job['state'] in self.JOB_ACTIVE:
+                            if 'node' in jobargs: del jobargs['node']
+                            if 'pool' in jobargs: del jobargs['pool']
+                else: #this is a new job
+                    if not jobargs.get('args') or not jobargs.get('pool'): return False #jobs have to have a command and pool to run in
+                    job={  
+                            'submit_ts':time.time(),    #submit timestamp
+                            'nodelist':[],              #list of nodes to handle this job
+                            'state':'new',              #job state
+                            'start_count':0,             
+                            'fail_count':0
+                        }
+                job.update(seq=self.__seq,ts=time.time(),**jobargs)
+                if not job.get('node'): job['node']=self.node #set job to be handled/routed by this node
                 self.__jobs[jid]=job
+                #if done, write job to history
+                self.write_history(jid)
                 self.__seq+=1
                 return jid
             except Exception as e: self.logger.warning(e,exc_info=True)
@@ -209,14 +237,14 @@ class State(threading.Thread):
                     for jid,job in self.__jobs.copy().items():
                         if time.time()-job['ts'] > self.expire: 
                             #jobs that have ended for some reason will no longer be updated, so expire them.
-                            if job['state'] in ['done','killed','failed']:
+                            if job['state'] in self.JOB_INACTIVE:
                                 self.logger.debug('expiring job %s'%jid)
                                 del self.__jobs[jid]
                             elif self.expire_active_jobs: 
                                 #this job *should* have been updated
                                 self.logger.warning('job %s not updated in %s seconds'%(jid,self.expire))
                                 #if we restart on fail and have a nodelist
-                                if job.get('restart_on_fail') and job['nodelist']:
+                                if job.get('retries') and job['nodelist']:
                                     # try kicking it back to the first node for rescheduling
                                     self.__jobs[jid].update(node=job['nodelist'][0]) 
                                 #set job to failed, it might restart if it can
@@ -234,4 +262,5 @@ class State(threading.Thread):
 
             time.sleep(1)
 
+        #close history file if we have one
         if self.hist_fh: self.hist_fh.close()

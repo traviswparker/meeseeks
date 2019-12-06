@@ -23,10 +23,10 @@ def create_ssl_context(cfg):
 class Node(threading.Thread):
     '''node poller/state sync thread
     initially we try to push all state to the node (sync_ts of 0)'''
-    def __init__(self,node,remote_node,state,**cfg):
-        self.node=node #node we are running on 
-        self.remote_node=remote_node #node we connect to
-        self.state=state
+    def __init__(self,__node,__remote_node,__state,**cfg):
+        self.node=__node #node we are running on 
+        self.remote_node=__remote_node #node we connect to
+        self.state=__state
         name='Node'
         if self.node:name=self.node+'.'+name
         if self.remote_node: name+='.'+self.remote_node

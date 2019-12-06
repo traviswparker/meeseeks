@@ -86,7 +86,7 @@ class Box:
         #init state
         scfg=self.defaults.copy()
         scfg.update(self.cfg.get('state',{}))
-        if not self.state: self.state=State(node=self.name,**scfg)
+        if not self.state: self.state=State(self.name,**scfg)
         else: self.state.config(**scfg)
 
         #stop/init pools
@@ -263,38 +263,30 @@ class Box:
         #return our state
         if 'get' in request:
             response['get']=self.state.get(**request['get'])
-        #submit job
+        #submit or modify a job
         if 'submit' in request: 
-            response['submit']=self.state.add_job(**request['submit'])
+            response['submit']=self.state.submit_job(**request['submit'])
         #query job
         if 'query' in request:
             response['query']=self.state.get_job(request['query'])
-        #modify job
+        #modify job - this bypasses all checks, use submit with id=existing if possible
         if 'modify' in request:
             for jid,data in request['modify'].items():
                 response.setdefault('modify',{})[jid]=self.state.update_job(jid,**data)
         #kill job
         if 'kill' in request:
             response['kill']=self.state.update_job(request['kill'],state='killed')
-
         # List all jobs
         if 'ls' in request:
             response['ls']=self.state.list_jobs(**request['ls'])
-
         #get cluster status
         if 'status' in request: 
             response['status']={     
                 #return the status of us and downstream nodes
                 'nodes':self.state.get_node_status(),
                 #return the  status of pools we know about
-                'pools':self.state.get_pool_status()
+                'pools':self.state.get_pool_status() 
             }
-
-        # Does not format nicely via netcat, because of newlines/tabs
-        if 'options' in request:
-            if 'pretty' in request['options'] and request['options']['pretty']:
-                response = json.dumps(response, sort_keys=True, indent=4)
-
         #get/set config
         if 'config' in request:
             cfg=request['config']
@@ -303,5 +295,8 @@ class Box:
                 self.cfg.update(request['config'])
                 self.restart.set() #main loop breaks and apply_config is called
             response['config']=self.cfg 
-
+        # Does not format nicely via netcat, because of newlines/tabs
+        if 'options' in request:
+            if 'pretty' in request['options'] and request['options']['pretty']:
+                response = json.dumps(response, sort_keys=True, indent=4)
         return response

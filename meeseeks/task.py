@@ -11,6 +11,7 @@ class Task(threading.Thread):
         threading.Thread.__init__(self,target=self.__task_run)
         popen_args={}
         self.stdin=self.stdout=self.stderr=None #file handles if redirecting
+        self.stdout_data=self.stderr_data=None #output if capturing
 
         # stdin from file
         stdin=job.get('stdin')
@@ -50,10 +51,8 @@ class Task(threading.Thread):
         if self.stderr: self.stderr.close()
 
         # return output as a base64 string if we got any
-        if stdout: self.stdout=base64.b64encode(stdout).decode()
-        else: self.stdout=None
-        if stderr: self.stderr=base64.b64encode(stderr).decode()
-        else: self.stderr=None
+        if stdout: self.stdout_data=base64.b64encode(stdout).decode()
+        if stderr: self.stderr_data=base64.b64encode(stderr).decode()
 
     def kill(self): self.__sub.kill()
     def poll(self): return self.__sub.poll()

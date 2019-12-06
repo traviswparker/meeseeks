@@ -14,7 +14,7 @@ c=Client('localhost')
 c.get_node_status() #get cluster status
 c.get_pool_status() #get pools
 c.get()             #get all jobs
-j=c.add_job(pool=...,args=[.....])  #submit a job, return the ID
+j=c.submit_job(pool=...,args=[.....])  #submit a job, return the ID
 c.get_job(j)        #check the job
 c.kill_job(j)       #stop the job
 c.close()           #disconnect client

@@ -98,24 +98,27 @@ example:
 
       "submit" :{ 
             "id": string , #job id, optional, MUST be unique. A UUID will be generated if id is omitted
+                           #if an existing job id is given, the job will be modified if possible
             "pool": string , #pool name, REQUIRED.
             "args": [executable, arg, arg, arg] , #REQUIRED. the command to run and arguments. If subprocess.Popen likes it, it will work.
             "node": node #optional. Strict node selection. Job will fail if node unavailable.
             "nodelist": [nodename, ... ], #optional. A list of preferred nodes to use. See Job Routing. 
         
-        "stdout": path, #optional, path to file to use for the job's stdout else returns the base64 encoded output
-        "stderr": path, #optional, path to file to use for the job's stderr else returns the base64 encoded output
         "stdin": path, #path to file to use for the job's stdin
-        "restart_on_exit": false|true,    #if true, job will be restarted on the same node if it exits with success (rc == 0)
-        "restart_on_fail": false|true,    #if true, job will be restarted on the same node if it exits with failure (rc != 0)
+        "stdout": path, #optional, path to file to use for the job's stdout else stdout_data returns the base64 encoded output
+        "stderr": path, #optional, path to file to use for the job's stderr else stderr_data returns the base64 encoded output
+        "runtime: int,  #optional, maximum runtime of the job
+        "hold": false|true, #optional, if true job will be assigned to a node but not run until set false
+        "restart": false|true,    #if true, job will be restarted on the same node if it exits with success (rc == 0)
+        "retries": int,           #if >0, job will be restarted a max of retrues on the same node if it exits with failure (rc != 0)
                                       # if a node fails, the jobs running on it will not be updated and will expire
-                                      # these jobs will be failed. If restart_on_fail is set they will be retried once.
+                                      # these jobs will be failed. If resries is set they will be retried.
                                       # if a nodelist is provided, the job will be reassigned to the first node in the list
                                       # else, the job will wait for the assigned node
       }
         response will be:
         {
-            "submit": the job_id, or false if submission failed (no pool, or job_id exists) 
+            "submit": the job_id, or false if submission failed 
         } 
 
       "query": job_id

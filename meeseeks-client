@@ -19,9 +19,12 @@ def usage():
             options for submit:
                 nodelist= (list of nodes to route job through)
                 stdin= stdout= stderr= (redirect job in/out/err to files named)
-                restart_on_done= (1=restart)
-                restart_on_fail= (1=restart)
-                max_runtime= (max runtime of job)
+                restart= (1=restart when done)
+                retries= (times to retry if job fails)
+                runtime= (max runtime of job)
+                id= (job id to submit changes to existing job)
+                state= (change existing job state, 'new' will restart finished job)
+                hold= (1=queue but do not start job)
 
         get [jobid,jobid...] (get all or specified jobs)
             options for get:
@@ -29,7 +32,7 @@ def usage():
 
         kill <jobid> [,jobid...]
 
-        status (prints all node status)
+        nodes (prints all node status)
 
         pools (prints all pools and free slots)
 
@@ -57,12 +60,15 @@ try:
         while not client.get_node_status(): time.sleep(1)
     if cmd == 'submit':
         #get pool, args and optional node selection
-        pool,args,node=args[0],args[1:],None
-        if '@' in pool: pool,node=pool.split('@',1)
+        pool=jobargs=node=None
+        if args: 
+            pool=args[0]
+            if len(args)>1: jobargs=args[1:]
+        if pool and '@' in pool: pool,node=pool.split('@',1)
         #if we are refreshing on the job, submit locally and let it dispatch
-        if cfg.get('refresh'): jids=[client.add_job(pool=pool,args=args,node=node,**cfg)]
+        if cfg.get('refresh'): jids=[client.submit_job(pool=pool,args=jobargs,node=node,**cfg)]
         #submit directly and return jid
-        else: print(client.submit(pool=pool,args=args,node=node,**cfg))
+        else: print(client.submit(pool=pool,args=jobargs,node=node,**cfg))
     elif cmd == 'get':
         if cfg.get('refresh'):
             if args: jids=args
@@ -73,7 +79,7 @@ try:
     elif cmd == 'kill': 
         for arg in args: pretty_print({arg:client.kill(arg)})
         if cfg.get('refresh') and args: jids=args
-    elif cmd == 'status': 
+    elif cmd == 'nodes': 
         if cfg.get('refresh'): 
             while True:
                 pretty_print(client.get_node_status())
@@ -92,8 +98,8 @@ try:
             for node in nodes: 
                 print(client.submit(pool='__config',node=node,args=c))
         else: pretty_print(client.request(dict(config=c))) #peer config push
-
     else: sys.exit(usage())
+    
     #refreshing on jobs
     if jids:
         seq={} #sequence numbers for printing updates
