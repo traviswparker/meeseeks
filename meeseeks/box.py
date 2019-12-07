@@ -113,21 +113,23 @@ class Box:
                 self.nodes[n]=Node(self.name,n,self.state,**ncfg)
             else: self.nodes[n].config(**ncfg)
 
-    #stop all pool
+    #stop and remove pool
     def stop_pool(self,p):
         pool=self.pools[p]
         pool.shutdown.set()
         self.logger.info('stopping %s'%pool.name)
         pool.join()
         del self.pools[p]
+        self.state.flush_status()
 
-    #stop all node
+    #stop and remove node connection
     def stop_node(self,n):
         node=self.nodes[n]
         node.shutdown.set()
         self.logger.info('stopping %s'%node.name)
         node.join()
         del self.nodes[n]
+        self.state.flush_status()
 
     def get_loadavg(self):
         try:
@@ -281,10 +283,11 @@ class Box:
             response['ls']=self.state.list_jobs(**request['ls'])
         #get cluster status
         if 'status' in request: 
+            if request['status'].get('flush'): self.state.flush_status()
             response['status']={     
                 #return the status of us and downstream nodes
                 'nodes':self.state.get_node_status(),
-                #return the  status of pools we know about
+                #return the status of pools we know about
                 'pools':self.state.get_pool_status() 
             }
         #get/set config

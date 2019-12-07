@@ -103,7 +103,14 @@ class State(threading.Thread):
         '''get a node:status map of cluster status'''
         return self.__node_status.copy()
     
+    def flush_status(self):
+        '''clear node and pool status'''
+        with self.__lock:
+            self.__node_status={}
+            self.__pool_status={}
+
     def update_pool_status(self,pool,node,slots): 
+        '''set slots on node in pool'''
         with self.__lock:
             if slots is False: #delete from status
                 if node in self.__pool_status.get(pool,{}):
@@ -111,6 +118,7 @@ class State(threading.Thread):
             else: self.__pool_status.setdefault(pool,{})[node]=slots
 
     def update_node_status(self,node,**node_status): 
+        '''set node status, remove node from pool if node offline'''
         with self.__lock:
             self.__node_status.setdefault(node,{}).update(**node_status)
             #take offline nodes out of the pools
