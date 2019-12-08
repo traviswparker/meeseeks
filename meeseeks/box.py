@@ -120,7 +120,6 @@ class Box:
         self.logger.info('stopping %s'%pool.name)
         pool.join()
         del self.pools[p]
-        self.state.flush_status()
 
     #stop and remove node connection
     def stop_node(self,n):
@@ -129,7 +128,7 @@ class Box:
         self.logger.info('stopping %s'%node.name)
         node.join()
         del self.nodes[n]
-        self.state.flush_status()
+        self.state.update_node_status(n,online=False,remove=True)
 
     def get_loadavg(self):
         try:
@@ -138,7 +137,7 @@ class Box:
         except: return 0.0 #only works on linux... ignore it.
 
     def biased_random(self,l,reverse=False):
-        #this is probably a stupid way to pick a random item while favoring the lowest sorted items 
+        #this is probably a stupid way to pick a random item while favoring the first of the sorted items 
         #first we pick a range between the first item and a randomly selected item
         #them we pick a random item from that range
         if l: 
@@ -158,9 +157,10 @@ class Box:
     
     def select_by_available(self,pool,nodes):
         #get nodes in this pool sorted from most to least open slots
+        #exclude nodes in pool with no slots unless we have no free slots
         pool_status=self.state.get_pool_status()
         nodes_slots=[ (pool_status[pool][node], node) for node in nodes \
-            if pool_status[pool][node] is not None ]
+            if pool_status[pool][node] is not True ]
         #do we have any nodes with pool slots?
         if nodes_slots: 
             s,node=self.biased_random(nodes_slots,reverse=True)
@@ -215,7 +215,7 @@ class Box:
                         elif pool not in self.pools: 
                             try:
                                 #we need to select a node that has the job's pool
-                                nodes=list(self.state.get_pool_status().get(pool,{}).keys())
+                                nodes=list(node for node,slots in self.state.get_pool_status().get(pool,{}).items() if slots)
                                 if not nodes: continue #we can't do anything with this job
 
                                 #filter by the job's nodelist if set
@@ -283,7 +283,6 @@ class Box:
             response['ls']=self.state.list_jobs(**request['ls'])
         #get cluster status
         if 'status' in request: 
-            if request['status'].get('flush'): self.state.flush_status()
             response['status']={     
                 #return the status of us and downstream nodes
                 'nodes':self.state.get_node_status(),

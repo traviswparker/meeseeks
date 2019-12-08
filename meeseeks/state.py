@@ -73,6 +73,7 @@ class State(threading.Thread):
         self.__pool_status={} #map of [pool][node][open slots] for nodes we connect downstream to
         self.__node_status={} #map of node:last status
         self.__seq=1 #update sequence number. Always increments.
+        self.__pool_ts=0 #pool status timestamp, cleaned up every expire
         self.hist_fh=None
         self.config(**cfg)
         self.start()
@@ -103,29 +104,24 @@ class State(threading.Thread):
         '''get a node:status map of cluster status'''
         return self.__node_status.copy()
     
-    def flush_status(self):
-        '''clear node and pool status'''
-        with self.__lock:
-            self.__node_status={}
-            self.__pool_status={}
-
     def update_pool_status(self,pool,node,slots): 
         '''set slots on node in pool'''
-        with self.__lock:
-            if slots is False: #delete from status
-                if node in self.__pool_status.get(pool,{}):
-                    del self.__pool_status[pool][node]
-            else: self.__pool_status.setdefault(pool,{})[node]=slots
+        with self.__lock: self.__update_pool_status(pool,node,slots)
+    def __update_pool_status(self,pool,node,slots):
+        self.__pool_status.setdefault(pool,{})[node]=slots
+        if slots is False: self.__pool_ts=time.time() #reset expiration on remove
 
     def update_node_status(self,node,**node_status): 
         '''set node status, remove node from pool if node offline'''
         with self.__lock:
-            self.__node_status.setdefault(node,{}).update(**node_status)
-            #take offline nodes out of the pools
-            if not node_status.get('online'):
-                for pool in self.__pool_status.keys():
-                    if node in self.__pool_status[pool]:
-                        del self.__pool_status[pool][node]
+            self.__update_node_status(node,**node_status)
+    def __update_node_status(self,node,**node_status): 
+        self.__node_status.setdefault(node,{}).update(**node_status)
+        #take offline nodes out of the pools
+        if not node_status.get('online'):
+            for pool in self.__pool_status.keys():
+                if node in self.__pool_status[pool]:
+                    self.__update_pool_status(pool,node,False)
 
     def get(self,node=None,pool=None,ts=None,seq=None):
         '''dump all state for a node/pool/or updated after a certain ts'''
@@ -152,18 +148,17 @@ class State(threading.Thread):
                         self.__jobs.setdefault(jid,{}).update(job,seq=self.__seq)
                         self.__seq+=1
                         updated.append(jid)
+                #update our status from incoming status data
+                for node,node_status in status.get('nodes',{}).items():
+                    #for the node we are syncing from
+                    #save the list of nodes it has seen
+                    if remote_node and node==remote_node: 
+                        node_status['seen']=list(status['nodes'].keys())
+                    self.__update_node_status(node,**node_status)
+                for pool,nodes in status.get('pools',{}).items():
+                    for node,slots in nodes.items(): 
+                        self.__update_pool_status(pool,node,slots)
             except Exception as e: self.logger.warning(e,exc_info=True)
-        #update our status from incoming status data
-        try:
-            for node,node_status in status.get('nodes',{}).items():
-                #for the node we are syncing from
-                #save the list of nodes it has seen
-                if remote_node and node==remote_node: 
-                    node_status['seen']=list(status['nodes'].keys())
-                self.update_node_status(node,**node_status)
-            for pool,nodes in status.get('pools',{}).items():
-                for node,slots in nodes.items(): self.update_pool_status(pool,node,slots)
-        except Exception as e: self.logger.warning(e,exc_info=True)
         #if updated job is finished, write it to history
         for jid in updated: self.write_history(jid)
         #return updated items
@@ -239,9 +234,9 @@ class State(threading.Thread):
         while not self.shutdown.is_set():
             self.logger.debug('status %s'%self.__node_status)
             self.logger.debug('pools %s'%self.__pool_status)
-            #look for jobs that should have been updated
             with self.__lock:
                 try:
+                    #look for jobs that should have been updated
                     for jid,job in self.__jobs.copy().items():
                         if time.time()-job['ts'] > self.expire: 
                             #jobs that have ended for some reason will no longer be updated, so expire them.
@@ -259,15 +254,27 @@ class State(threading.Thread):
                                 self.__jobs[jid].update(seq=self.__seq,ts=time.time(),state='failed',error='expired')
                                 self.write_history(jid)
                                 self.__seq+=1
-                                
-                                
+                    #set nodes that have not sent status to offline
+                    for node,node_status in self.__node_status.copy().items():
+                        if time.time()-node_status.get('ts',0) > self.expire:
+                            self.logger.debug('expiring node %s' %node)
+                            if node_status.get('online'):
+                                self.logger.warning('node %s not updated in %s seconds'%(node,self.expire))
+                                self.__update_node_status(node,online=False)
+                            elif node_status.get('remove'): #offline node is marked for upstream removal
+                                del self.__node_status[node]
+                    #expire removed nodes from pool status and remove empty pools
+                    if time.time()-self.__pool_ts > self.expire:
+                        for pool,nodes in self.__pool_status.copy().items():
+                            for node,slots in nodes.copy().items():
+                                if slots is False: 
+                                    self.logger.info('expiring node %s from pool %s'%(node,pool))
+                                    del self.__pool_status[pool][node]
+                            if not self.__pool_status[pool]:
+                                self.logger.info('expiring empty pool %s'%(pool))
+                                del self.__pool_status[pool]
+                        self.__pool_ts=time.time()
                 except Exception as e: self.logger.warning(e,exc_info=True)
-            #set nodes that have not sent status to offline
-            for node,node_status in self.__node_status.items():
-                if node_status.get('online') and time.time()-node_status['ts'] > self.expire:
-                    self.logger.warning('node %s not updated in %s seconds'%(node,self.expire))
-                    self.update_node_status(node,online=False)
-
             time.sleep(1)
 
         #close history file if we have one

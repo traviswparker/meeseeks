@@ -24,8 +24,8 @@ class Pool(threading.Thread):
         if update: self.update=int(update) #how often we update the state of running/waiting jobs
         if runtime: self.max_runtime=int(runtime)
         else: self.max_runtime=None
-        if slots: self.slots=int(slots) #number of job slots, or None if not limited
-        else: self.slots=None
+        if slots: self.slots=int(slots) #number of job slots, or True if not limited
+        else: self.slots=True
 
     def start_job(self,jid):
         job=self.state.get_job(jid)

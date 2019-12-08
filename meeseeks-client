@@ -36,8 +36,6 @@ def usage():
 
         pools (prints all pools and free slots)
 
-        flush (flushes cached node/pool status)
-
         config [key=value] [node]
             get/sends config to directly connected or specified node
 
@@ -97,7 +95,6 @@ try:
                 time.sleep(cfg.get('refresh'))
         else: pretty_print(client.status()['pools'])
     elif cmd == 'ls': pretty_print(client.ls(**cfg))
-    elif cmd == 'flush': pretty_print(client.request({'status':{'flush':True}}))
     elif cmd == 'config': 
         c,nodes=cmdline_parser(args)
         if nodes:
