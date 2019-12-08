@@ -120,8 +120,9 @@ class State(threading.Thread):
         #take offline nodes out of the pools
         if not node_status.get('online'):
             for pool in self.__pool_status.keys():
-                if node in self.__pool_status[pool]:
-                    self.__update_pool_status(pool,node,False)
+                if node in self.__pool_status[pool] \
+                    and self.__pool_status[pool][node] is not False:
+                        self.__update_pool_status(pool,node,False)
 
     def get(self,node=None,pool=None,ts=None,seq=None):
         '''dump all state for a node/pool/or updated after a certain ts'''
@@ -257,11 +258,11 @@ class State(threading.Thread):
                     #set nodes that have not sent status to offline
                     for node,node_status in self.__node_status.copy().items():
                         if time.time()-node_status.get('ts',0) > self.expire:
-                            self.logger.debug('expiring node %s' %node)
                             if node_status.get('online'):
                                 self.logger.warning('node %s not updated in %s seconds'%(node,self.expire))
                                 self.__update_node_status(node,online=False)
                             elif node_status.get('remove'): #offline node is marked for upstream removal
+                                self.logger.info('expiring node %s' %node)
                                 del self.__node_status[node]
                     #expire removed nodes from pool status and remove empty pools
                     if time.time()-self.__pool_ts > self.expire:
