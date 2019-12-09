@@ -8,11 +8,11 @@ import random
 import json
 import socket
 import socketserver
-import ssl
 
 from .state import State
-from .node import Node, create_ssl_context
+from .node import Node
 from .pool import Pool
+from .util import create_ssl_context
 
 class RequestHandler(socketserver.StreamRequestHandler):
     '''control socket request handler'''

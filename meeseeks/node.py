@@ -4,21 +4,9 @@ import time
 import threading
 import logging
 import json
-import socket, ssl
+import socket
 
-def create_ssl_context(cfg):
-    ssl_context=ssl.SSLContext(
-        ssl.PROTOCOL_TLS,
-        capath=cfg.get('capath'),
-        cafile=cfg.get('cafile'))
-    if 'ciphers' in cfg: ssl_context.set_ciphers(cfg['ciphers'])
-    if 'options' in cfg: ssl_context.options|=cfg['options']
-    if 'verify' in cfg: ssl_context.verify_mode=cfg['verify']
-    if 'cert' in cfg: ssl_context.load_cert_chain(
-        cfg.get('cert'),
-        keyfile=cfg.get('key'),
-        password=cfg.get('pass') )
-    return ssl_context
+from .util import create_ssl_context
 
 class Node(threading.Thread):
     '''node poller/state sync thread

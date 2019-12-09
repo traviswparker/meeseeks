@@ -2,6 +2,7 @@
 
 import sys
 import json
+import ssl
 
 def read_cfg_files(args):
     cfg={}
@@ -33,3 +34,17 @@ def cmdline_parser(args):
         i+=1
     args=args[i:]
     return cfg,args
+
+def create_ssl_context(cfg):
+    ssl_context=ssl.SSLContext(
+        ssl.PROTOCOL_TLS,
+        capath=cfg.get('capath'),
+        cafile=cfg.get('cafile'))
+    if 'ciphers' in cfg: ssl_context.set_ciphers(cfg['ciphers'])
+    if 'options' in cfg: ssl_context.options|=cfg['options']
+    if 'verify' in cfg: ssl_context.verify_mode=cfg['verify']
+    if 'cert' in cfg: ssl_context.load_cert_chain(
+        cfg.get('cert'),
+        keyfile=cfg.get('key'),
+        password=cfg.get('pass') )
+    return ssl_context
