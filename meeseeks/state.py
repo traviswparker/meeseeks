@@ -154,7 +154,7 @@ class State(threading.Thread):
                     #for the node we are syncing from
                     #save the list of nodes it has seen
                     if remote_node and node==remote_node: 
-                        node_status['seen']=list(status['nodes'].keys())
+                        node_status['routing']=list(status['nodes'].keys())
                     self.__update_node_status(node,**node_status)
                 for pool,nodes in status.get('pools',{}).items():
                     for node,slots in nodes.items(): 

@@ -40,7 +40,7 @@ class RequestHandler(socketserver.StreamRequestHandler):
     def handle(self):
         self.logger=logging.getLogger(str(self.client_address))
         self.logger.debug('connected')
-        while True:
+        while not self.server.handler.shutdown.is_set(): #client will be disconnected at shutdown
             l=self.rfile.readline() #get line from client
             if not l.strip(): break #will be None if client disconnected
             requests=json.loads(l) #apply initial config
@@ -170,7 +170,6 @@ class Box:
         else: return random.choice( nodes )
 
     def run(self):
-        self.logger.info('starting')
         while not self.shutdown.is_set():  #existence is pain!
 
             #apply state/pool/node config
@@ -247,13 +246,14 @@ class Box:
         self.cfg.update(pools={},nodes={})
         self.apply_config() 
 
-        self.listener.shutdown()
-        self.listener.server_thread.join()
-
         #stop state manager
         self.state.shutdown.set()
         self.logger.info('stopping %s'%self.state.name)
-        self.state.join()    
+        self.state.join()   
+
+        #stop listening
+        self.listener.shutdown()
+        self.listener.server_thread.join()
 
     #handle incoming request
     def handle(self,request):

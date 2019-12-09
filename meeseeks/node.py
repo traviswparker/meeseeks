@@ -57,6 +57,7 @@ class Node(threading.Thread):
                     if 'ssl' in self.cfg:
                         self.__socket = create_ssl_context(self.cfg.get('ssl')).wrap_socket(self.__socket)
                 except Exception as e:
+                    self.logger.debug(e)
                     if self.__socket is not False:
                         self.logger.warning(e)
                         self.__socket=False #suppress repeated warnings
@@ -67,7 +68,9 @@ class Node(threading.Thread):
                     self.__socket.sendall('\n'.encode())
                     l=''
                     while True:
-                        l+=self.__socket.recv(65535).decode()
+                        d=self.__socket.recv(65535).decode()
+                        if not d: raise Exception('disconnected from %s:%s'%(self.address,self.port))
+                        l+=d
                         if '\n' in l: return json.loads(l)
                 except Exception as e: 
                     self.logger.warning(e)
@@ -85,8 +88,7 @@ class Node(threading.Thread):
             node_status=self.state.get_node_status()
             sync=dict( (jid,job) for (jid,job) in self.state.get(seq=local_seq).items() \
                         if self.node is None or \
-                         ( job['node'] != self.node and job['node'] in \
-                           node_status.get(self.remote_node,{}).get('seen',[] ) )
+                            job['node'] in node_status.get(self.remote_node,{}).get('routing',[])
                     )
             #get highest local sequence number
             if sync: local_seq=max(job['seq'] for job in sync.values())
