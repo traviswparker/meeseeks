@@ -14,27 +14,6 @@ from .state import State
 from .node import Node, create_ssl_context
 from .pool import Pool
 
-def cmdline_parser(args):
-    #parse args
-    # cfg={key[.subkey.s]=value[,value..] args preceeding first non = argument}
-    cfg={}
-    i=0
-    for arg in args:
-        if '=' in arg:
-            k,v=arg.split('=',1)
-            c=cfg #may be sub dict, for k.s=v arguments
-            while '.' in k: #walk subkeys
-                k,sk=k.split('.',1)
-                c,k=c.setdefault(k,{}),sk
-            if v.isnumeric(): v=int(v)
-            elif ',' in v: v=list(v.split(','))
-            elif not v: v={}
-            c[k]=v
-        else: break #stop at first arg without =
-        i+=1
-    args=args[i:]
-    return cfg,args
-
 class RequestHandler(socketserver.StreamRequestHandler):
     '''control socket request handler'''
     def handle(self):

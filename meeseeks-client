@@ -6,7 +6,7 @@ import json
 import time
 
 from meeseeks import Client
-from meeseeks.box import cmdline_parser
+from meeseeks.util import cmdline_parser, read_cfg_files
 
 def pretty_print(d): print (json.dumps(d, sort_keys=True, indent=4))
 
@@ -52,6 +52,7 @@ cfg={ 'address':'localhost' }
 try:
     cfg,args=cmdline_parser(sys.argv[1:])
     cmd,args=args[0],args[1:] #end of options
+    if 'file' in cfg: cfg.update(read_cfg_files(cfg['file']))
     logging.basicConfig(level=cfg.get('log',logging.INFO))
     logging.debug('%s %s %s'%(cfg,cmd,args))
     client=Client(**cfg) #create client and connect
@@ -97,9 +98,10 @@ try:
     elif cmd == 'ls': pretty_print(client.ls(**cfg))
     elif cmd == 'config': 
         c,nodes=cmdline_parser(args)
+        if 'file' in c: c.update(read_cfg_files(c['file']))
         if nodes:
             for node in nodes:
-                if not c: c={'name':node} #dummy config to allow job submit 
+                if not c: c={'name':node} #dummy config to allow job submit
                 print(client.submit(pool='__config',node=node,args=c))
         else: pretty_print(client.request(dict(config=c))) #peer config push
     else: sys.exit(usage())

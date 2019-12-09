@@ -5,7 +5,8 @@ import json
 import logging
 import signal
 
-from meeseeks.box import Box, cmdline_parser
+from meeseeks.box import Box
+from meeseeks.util import cmdline_parser, read_cfg_files
 
 def signal_handler(*args):
     logging.debug(args)
@@ -13,12 +14,7 @@ def signal_handler(*args):
 
 cfgargs,args=cmdline_parser(sys.argv[1:])
 
-cfg={}
-for f in args: 
-    try:
-        with open(f) as fh: cfg.update(json.load(fh))
-    except Exception as e:
-        print (e,file=sys.stderr)
+cfg=read_cfg_files(args)
 
 cfg.update(cfgargs)
 
