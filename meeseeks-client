@@ -29,7 +29,7 @@ def usage():
         get [jobid,jobid... | filter] (get all or specified jobs)
         ls [filter] (list job ids)
             filter for get/ls:
-                node= pool= state= ts= (query filters for jobs)
+                node= pool= state= (query filters for jobs)
 
         kill <jobid> [,jobid...]
 
@@ -57,7 +57,7 @@ try:
     logging.basicConfig(level=cfg.get('log',logging.INFO))
     logging.debug('%s %s %s'%(cfg,cmd,args))
     client=Client(**cfg) #create client and connect
-    jids=None
+    jids,query=None,{}
     #if we will be refreshing, refresh now until state populated
     if cfg.get('refresh'):
         while not client.get_node_status(): time.sleep(1)
@@ -72,48 +72,45 @@ try:
         if cfg.get('refresh'): jids=[client.submit_job(pool=pool,args=jobargs,node=node,**cfg)]
         #submit directly and return jid
         else: print(client.submit(pool=pool,args=jobargs,node=node,**cfg))
-    elif cmd == 'get':
-        q,args=cmdline_parser(args)
-        if cfg.get('refresh'):
-            if args: jids=args
-            else: jids=True #get all
-        elif args:
-            for arg in args: pretty_print({arg:client.query(arg)})
-        else: pretty_print(client.query(**q))
-    elif cmd == 'kill': 
-        for arg in args: pretty_print({arg:client.kill(arg)})
-        if cfg.get('refresh') and args: jids=args
-    elif cmd == 'nodes': 
-        if cfg.get('refresh'): 
-            while True:
-                pretty_print(client.get_node_status())
-                time.sleep(cfg.get('refresh'))
-        else: pretty_print(client.status()['nodes'])
-    elif cmd == 'pools': 
-        if cfg.get('refresh'): 
-            while True:
-                pretty_print(client.get_pool_status())
-                time.sleep(cfg.get('refresh'))
-        else: pretty_print(client.status()['pools'])
-    elif cmd == 'ls': 
-        q,args=cmdline_parser(args)
-        pretty_print(client.ls(**q))
-    elif cmd == 'config': 
-        c,nodes=cmdline_parser(args)
-        if 'file' in c: c.update(read_cfg_files(c['file']))
-        if nodes:
-            for node in nodes:
-                if not c: c={'name':node} #dummy config to allow job submit
-                print(client.submit(pool='__config',node=node,args=c))
-        else: pretty_print(client.request(dict(config=c))) #peer config push
-    else: sys.exit(usage())
+    else: #if not submit, parse as query args and job ids
+        kwargs,args=cmdline_parser(args)
+        if cmd == 'get':
+            if cfg.get('refresh'):
+                if args: jids=args
+                else: jids=True #get all
+            elif args:
+                for arg in args: pretty_print({arg:client.query(arg)})
+            else: pretty_print(client.query(**kwargs))
+        elif cmd == 'kill': pretty_print(client.kill(args,**kwargs))
+        elif cmd == 'ls': pretty_print(client.ls(**kwargs))
+        elif cmd == 'nodes': 
+            if cfg.get('refresh'): 
+                while True:
+                    pretty_print(client.get_node_status())
+                    time.sleep(cfg.get('refresh'))
+            else: pretty_print(client.status()['nodes'])
+        elif cmd == 'pools': 
+            if cfg.get('refresh'): 
+                while True:
+                    pretty_print(client.get_pool_status())
+                    time.sleep(cfg.get('refresh'))
+            else: pretty_print(client.status()['pools'])
+        elif cmd == 'config': 
+            if 'file' in kwargs: kwargs.update(read_cfg_files(kwargs['file']))
+            if args:
+                for node in args:
+                    if not kwargs: kwargs={'name':node} #dummy config to allow job submit
+                    print(client.submit(pool='__config',node=node,args=kwargs))
+            else: pretty_print(client.request(dict(config=kwargs))) #peer config push
+        else: sys.exit(usage())
     
     #refreshing on jobs
     if jids:
         seq={} #sequence numbers for printing updates
         while True: 
-            if jids is True: jobs=client.get(**q)
+            if jids is True: jobs=client.get(**kwargs)
             else: jobs=dict((jid,client.get_job(jid)) for jid in jids)
+            print (jobs)
             if not any(jobs.values()): break #exit when no jobs left
             #print updates (when job seq != saved seq)
             updates=dict((jid,job) for (jid,job) in jobs.items() if job['seq'] != seq.get(jid))
