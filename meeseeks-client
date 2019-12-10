@@ -26,9 +26,10 @@ def usage():
                 state= (change existing job state, 'new' will restart finished job)
                 hold= (1=queue but do not start job)
 
-        get [jobid,jobid...] (get all or specified jobs)
-            options for get:
-                node= pool= ts= (query filters for jobs)
+        get [jobid,jobid... | filter] (get all or specified jobs)
+        ls [filter] (list job ids)
+            filter for get/ls:
+                node= pool= state= ts= (query filters for jobs)
 
         kill <jobid> [,jobid...]
 
@@ -57,8 +58,6 @@ try:
     logging.debug('%s %s %s'%(cfg,cmd,args))
     client=Client(**cfg) #create client and connect
     jids=None
-    #get query spec from config if any
-    query=dict((k,v) for (k,v) in cfg.items() if k in ['node','pool','ts'])
     #if we will be refreshing, refresh now until state populated
     if cfg.get('refresh'):
         while not client.get_node_status(): time.sleep(1)
@@ -74,12 +73,13 @@ try:
         #submit directly and return jid
         else: print(client.submit(pool=pool,args=jobargs,node=node,**cfg))
     elif cmd == 'get':
+        q,args=cmdline_parser(args)
         if cfg.get('refresh'):
             if args: jids=args
             else: jids=True #get all
         elif args:
             for arg in args: pretty_print({arg:client.query(arg)})
-        else: pretty_print(client.query(**query))
+        else: pretty_print(client.query(**q))
     elif cmd == 'kill': 
         for arg in args: pretty_print({arg:client.kill(arg)})
         if cfg.get('refresh') and args: jids=args
@@ -95,7 +95,9 @@ try:
                 pretty_print(client.get_pool_status())
                 time.sleep(cfg.get('refresh'))
         else: pretty_print(client.status()['pools'])
-    elif cmd == 'ls': pretty_print(client.ls(**cfg))
+    elif cmd == 'ls': 
+        q,args=cmdline_parser(args)
+        pretty_print(client.ls(**q))
     elif cmd == 'config': 
         c,nodes=cmdline_parser(args)
         if 'file' in c: c.update(read_cfg_files(c['file']))
@@ -110,7 +112,7 @@ try:
     if jids:
         seq={} #sequence numbers for printing updates
         while True: 
-            if jids is True: jobs=client.get(**query)
+            if jids is True: jobs=client.get(**q)
             else: jobs=dict((jid,client.get_job(jid)) for jid in jids)
             if not any(jobs.values()): break #exit when no jobs left
             #print updates (when job seq != saved seq)
