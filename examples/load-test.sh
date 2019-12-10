@@ -6,7 +6,7 @@ for c in 1 2 3 4 5 6 7 8 9; do
 
     for n in 1 2 3 4 5 6 7 8 9; do
 
-        ../meeseeks-box name=node${c}${n} listen.port=137${c}${n} pools.p${n}.slots=${n} &
+        ../meeseeks-box name=node${c}${n} listen.port=137${c}${n} pools.p1.slots=2 &
 
     done
 
@@ -14,5 +14,9 @@ done
 
 
 ../meeseeks-box name=master defaults.address=127.0.0.1 nodes.head1.port=13710 nodes.head2.port=13720 nodes.head3.port=13730 nodes.head4.port=13740 nodes.head5.port=13750 nodes.head6.port=13760 nodes.head7.port=13770 nodes.head8.port=13780 nodes.head9.port=13790 &
+
+sleep 10
+
+for j in {1..300}; do ../meeseeks-client submit p1 sleep $j; done 
 
 while true; do sleep 1; done
