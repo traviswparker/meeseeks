@@ -35,8 +35,7 @@ class Task(threading.Thread):
         else:
             popen_args.update(stderr=subprocess.PIPE)
             
-        # start subprocess
-        # TODO: Needs to handle FileNotFoundError and other exceptions
+        # start subprocess. If this raises we don't start a thread
         self.__sub=subprocess.Popen(job.get('args'), **popen_args)
         self.pid=self.__sub.pid
         self.start() #thread will wait on subprocess
@@ -55,4 +54,8 @@ class Task(threading.Thread):
         if stderr: self.stderr_data=base64.b64encode(stderr).decode()
 
     def kill(self): self.__sub.kill()
-    def poll(self): return self.__sub.poll()
+    def poll(self): 
+        #return None until the thread exits so we can reliably capture output
+        if self.is_alive(): return None
+        if self.__sub.poll() is None: self.__sub.kill() #thread is dead but subprocess is not, kill it
+        return self.__sub.poll() #return subprocess rc

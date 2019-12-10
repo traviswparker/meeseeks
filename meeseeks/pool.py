@@ -28,6 +28,7 @@ class Pool(threading.Thread):
         else: self.slots=True
 
     def start_job(self,jid):
+        '''caaaaaaan do!'''
         job=self.state.get_job(jid)
         try: 
             self.__tasks[jid]=Task(job)
@@ -44,15 +45,18 @@ class Pool(threading.Thread):
             self.state.update_job(jid,state='failed',error=str(e))
     
     def kill_job(self,jid,job):
-        self.logger.info('killing %s [%s]'%(jid,job['pid']))
-        self.__tasks[jid].kill()
+        '''kill running task and wait for task to exit'''
+        self.logger.info('killing %s [%s]'%(jid,self.__tasks[jid].pid))
+        try:
+            self.__tasks[jid].kill()
+            self.__tasks[jid].join()
+        except Exception as e: self.logger.warning(e,exc_info=True)
         self.state.update_job(jid,state='killed')
 
     def check_job(self,jid,job):
         state=job['state']
         rc=self.__tasks[jid].poll()
-        if rc is not None: #job exited
-            self.__tasks[jid].join() #wait for task to exit
+        if rc is not None: #task exited
             fail_count=job['fail_count']
             if state == 'running':
                 if rc == 0: state='done'
@@ -68,7 +72,7 @@ class Pool(threading.Thread):
                 stdout_data=self.__tasks[jid].stdout_data,
                 stderr_data=self.__tasks[jid].stderr_data )
             self.logger.info("job %s %s (%s)"%(jid,state,rc))
-            del self.__tasks[jid] #and dispose of it
+            del self.__tasks[jid] #free the slot
         #was job killed or max runtime
         elif job.get('runtime') and (time.time()-job['start_ts'] > job['runtime']):
             self.logger.warning('job %s exceeded job runtime of %s'%(jid,job['runtime']))
@@ -87,9 +91,9 @@ class Pool(threading.Thread):
                     if jid in self.__tasks:
                         if job['state'] == 'killed': self.kill_job(jid,job)
                         self.check_job(jid,job)
-                    elif (job['state'] == 'running'): #job is supposed be running but isn't. node crash?
+                    elif (job['state'] == 'running'): #job is supposed be running but isn't?
                         self.logger.warning('job %s in state running but no task'%jid)
-                        self.state.update_job( jid, state='failed', error='Lost' )
+                        self.state.update_job( jid, state='failed', error='crashed' )
                     #update queued/running jobs
                     if (job['state'] == 'running' or job['state'] == 'waiting') \
                         and (time.time()-job['ts'] > self.update):
@@ -99,16 +103,22 @@ class Pool(threading.Thread):
                         or (job['state'] == 'done' and job.get('restart')) \
                         or (job['state'] == 'failed' and job.get('fail_count') < int(job.get('retries',0)) ):
                             if not job.get('hold') and (not self.slots or (len(self.__tasks) < self.slots)):
-                                 self.start_job(jid) #caaaaaaan do!
+                                 self.start_job(jid)
                             #job is waiting for a slot
                             elif job['state'] != 'waiting': self.state.update_job(jid,state='waiting')
+                #check for orphaned tasks. This shouldn't happen but it can if time jumps.
+                for jid in list(self.__tasks.keys()):
+                    if jid not in pool_jobs:
+                        self.logger.warning('task %s not found in pool jobs'%jid)
+                        self.kill_job(jid,None) #just kill it
+                        del self.__tasks[jid] #recover the slot
+                #update pool status with free slots
+                if self.slots: 
+                    slots_free=self.slots-len(self.__tasks)
+                    if slots_free < 0: slots_free=0 #can happen if slots changed
+                else: slots_free=None #no slots set
+                self.state.update_pool_status(self.pool,self.node,slots_free)
             except Exception as e: self.logger.error(e,exc_info=True)
-            #update pool status with free slots
-            if self.slots: 
-                slots_free=self.slots-len(self.__tasks)
-                if slots_free < 0: slots_free=0 #can happen if slots changed
-            else: slots_free=None #no slots set
-            self.state.update_pool_status(self.pool,self.node,slots_free)
             time.sleep(self.refresh)
 
         #at shutdown, kill all jobs, mark as failed
@@ -116,6 +126,7 @@ class Pool(threading.Thread):
         for jid in list(self.__tasks.keys()):
             job=pool_jobs[jid]
             self.kill_job(jid,job)
+            del self.__tasks[jid] 
             self.state.update_job( jid,
                 state='failed',
                 error='shutdown',
