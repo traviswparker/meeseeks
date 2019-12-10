@@ -124,13 +124,14 @@ class State(threading.Thread):
                     and self.__pool_status[pool][node] is not False:
                         self.__update_pool_status(pool,node,False)
 
-    def get(self,node=None,pool=None,ts=None,seq=None):
-        '''dump all state for a node/pool/or updated after a certain ts'''
+    def get(self,node=None,pool=None,state=None,ts=None,seq=None):
+        '''dump all jobs for a node/pool/state/or updated after a certain ts/seq'''
         with self.__lock:
             try: 
                 return dict((jid,job.copy()) for (jid,job) in self.__jobs.items() if \
                     (   (not node or job['node']==node) and \
                         (not pool or job['pool']==pool) and \
+                        (not state or job['state']==state) and \
                         (not ts or job['ts']>ts) and \
                         (not seq or job['seq']>seq)     )
                 )
