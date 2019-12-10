@@ -22,12 +22,14 @@ class RequestHandler(socketserver.StreamRequestHandler):
         while not self.server.handler.shutdown.is_set(): #client will be disconnected at shutdown
             l=self.rfile.readline() #get line from client
             if not l.strip(): break #will be None if client disconnected
-            requests=json.loads(l) #apply initial config
             responses=[]
-            if requests:
-                for request in requests:
-                    response=self.server.handler.handle(request)
-                    responses.append(response)
+            try:
+                requests=json.loads(l) #apply initial config
+                if requests:
+                    for request in requests:
+                        response=self.server.handler.handle(request)
+                        responses.append(response)
+            except Exception as e: responses.append({'error':str(e)})
             self.wfile.write(json.dumps(responses).encode())
             self.wfile.write('\n'.encode())
             self.wfile.flush() #flush
@@ -248,16 +250,16 @@ class Box:
         #submit or modify a job
         if 'submit' in request: 
             response['submit']=self.state.submit_job(**request['submit'])
-        #query job
-        if 'query' in request:
-            response['query']=self.state.get_job(request['query'])
+        #get job by id
+        if 'job' in request:
+            response['job']=self.state.get_job(request['job'])
         #modify job - this bypasses all checks, use submit with id=existing if possible
         if 'modify' in request:
             for jid,data in request['modify'].items():
                 response.setdefault('modify',{})[jid]=self.state.update_job(jid,**data)
         #kill job
         if 'kill' in request:
-            response['kill']=self.state.update_job(request['kill'],state='killed')
+            response['kill']=self.state.kill_jobs(request['kill'])
         # List all jobs
         if 'ls' in request:
             response['ls']=self.state.list_jobs(**request['ls'])

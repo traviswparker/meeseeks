@@ -16,7 +16,7 @@ c.get_pool_status() #get pools
 c.get()             #get all jobs
 j=c.submit_job(pool=...,args=[.....])  #submit a job, return the ID
 c.get_job(j)        #check the job
-c.kill_job(j)       #stop the job
+c.kill_jobs(j)       #stop the job(s)
 c.close()           #disconnect client
 '''
 
@@ -43,9 +43,11 @@ class Client(State):
     #direct request methods
     def submit(self,**kwargs): return self.__node.request([{'submit':kwargs}])[0]['submit']
     def query(self,jid=None,**kwargs): 
-        if jid: return self.__node.request([{'query':jid}])[0]['query']
+        if jid: return self.__node.request([{'job':jid}])[0]['job']
         else: return self.__node.request([{'get':kwargs}])[0]['get']
-    def kill(self,jid): return self.__node.request([{'kill':jid}])[0]['kill']
+    def kill(self,jid=None,**kwargs): 
+        if jid: return self.__node.request([{'kill':jid}])[0]['kill']
+        else: return self.__node.request([{'kill':kwargs}])[0]['kill']
     def ls(self,**kwargs): return self.__node.request([{'ls':kwargs}])[0]['ls']
     def status(self,**kwargs): return self.__node.request([{'status':kwargs}])[0]['status']
     def request(self,req): return self.__node.request([req])[0] #for sending raw request

@@ -124,17 +124,15 @@ class State(threading.Thread):
                     and self.__pool_status[pool][node] is not False:
                         self.__update_pool_status(pool,node,False)
 
-    def get(self,node=None,pool=None,state=None,ts=None,seq=None):
+    def get(self,id=None,ts=None,seq=None,**query):
         '''dump all jobs for a node/pool/state/or updated after a certain ts/seq'''
         with self.__lock:
-            try: 
-                return dict((jid,job.copy()) for (jid,job) in self.__jobs.items() if \
-                    (   (not node or job['node']==node) and \
-                        (not pool or job['pool']==pool) and \
-                        (not state or job['state']==state) and \
-                        (not ts or job['ts']>ts) and \
-                        (not seq or job['seq']>seq)     )
-                )
+            try: #filter by ts/seq greater than
+                r=dict((jid,job.copy()) for (jid,job) in self.__jobs.items() if \
+                     (not ts or job['ts']>ts) and (not seq or job['seq']>seq) )
+                for (k,v) in query.items(): #filter by arbitrary criteria
+                    r=dict((jid,job) for (jid,job) in r.items() if job.get(k)==v)
+                return r
             except Exception as e: self.logger.warning(e,exc_info=True)
         return None
 
@@ -187,6 +185,17 @@ class State(threading.Thread):
                 else: return False
             except Exception as e: self.logger.warning(e,exc_info=True)
 
+    def kill_jobs(self,*args,**kwargs):
+        '''kill jobs, args can be a job id, a list of jobids, or a query dict'''
+        resp={}
+        if kwargs: arg=kwargs
+        elif args: arg=args[0]
+        if type(arg) is list: jids=arg
+        elif type(arg) is dict: jids=self.list_jobs(**arg)
+        else: jids=args #single job id or list of ids
+        for jid in jids: resp[jid]=self.update_job(jid,state='killed')
+        return resp
+        
     def list_jobs(self,**kwargs):
         '''return list of job ids'''
         return list(self.get(**kwargs).keys())
