@@ -17,6 +17,6 @@ done
 
 sleep 10
 
-for j in {1..300}; do ../meeseeks-client submit p1 sleep $j; done 
+for j in {1..300}; do ../meeseeks-client id=job$j submit p1 sleep $j; done 
 
 while true; do sleep 1; done

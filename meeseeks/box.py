@@ -139,7 +139,7 @@ class Box:
         #exclude nodes in pool with no slots unless we have no free slots
         pool_status=self.state.get_pool_status()
         nodes_slots=[ (pool_status[pool][node], node) for node in nodes \
-            if pool_status[pool][node] is not True ]
+            if pool_status[pool][node] and pool_status[pool][node] is not True ]
         #do we have any nodes with pool slots?
         if nodes_slots: 
             s,node=self.biased_random(nodes_slots,reverse=True)
@@ -193,7 +193,8 @@ class Box:
                         elif pool not in self.pools: 
                             try:
                                 #we need to select a node that has the job's pool
-                                nodes=list(node for node,slots in self.state.get_pool_status().get(pool,{}).items() if slots)
+                                nodes=list(node for node,slots in self.state.get_pool_status().get(pool,{}).items() \
+                                    if slots is not False)
                                 if not nodes: continue #we can't do anything with this job
 
                                 #filter by the job's nodelist if set
