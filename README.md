@@ -153,35 +153,36 @@ failed: job failed. rc will be set, or error will be set. If the job expired, no
 
 # meeseeks-client
 
-    ./meeseeks-client [options] <command>
+    ./meeseeks-client [options] <command> [args...]
 
     commands are:
         submit <pool[@node]> <executable> [args....]
             options for submit:
                 nodelist= (list of nodes to route job through)
                 stdin= stdout= stderr= (redirect job in/out/err to files named)
-                restart_on_done= (1=restart)
-                restart_on_fail= (1=restart)
-                max_runtime= (max runtime of job)
+                restart= (1=restart when done)
+                retries= (times to retry if job fails)
+                runtime= (max runtime of job)
+                id= (job id to submit changes to existing job)
+                state= (change existing job state, 'new' will restart finished job)
+                hold= (1=queue but do not start job)
 
-        ls (list job ids)
-            options for ls:
-                node= pool= ts= (query filters for jobs)
+        get [jobid,jobid... | filter] (get all or specified jobs)
+        ls [filter] (list job ids)
+            filter for get/ls:
+                node= pool= state= (query filters for jobs)
 
-        get [jobid] [jobid] ... (get all or specified jobs)
-            options for get:
-                node= pool= ts= (query filters for jobs)
+        kill <jobid(s)|filter> (kill jobs matching ids or criteria)
 
-        kill <jobid> [jobid...]
-
-        status (prints all node status)
+        nodes (prints all node status)
 
         pools (prints all pools and free slots)
 
-        config [key=value... ] [remote-node]
-            sends configuration to the directly connected or remote nodes 
+        config [key=value|file=<filename>] [node]
+            get/sends config to directly connected or specified node
 
     generic options are: 
         address= (default localhost)
         port= (defult 13700)
         refresh= (interval to continuously refresh status until no jobs left)
+
