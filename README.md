@@ -167,18 +167,20 @@ failed: job failed. rc will be set, or error will be set. If the job expired, no
                 state= (change existing job state, 'new' will restart finished job)
                 hold= (1=queue but do not start job)
 
-        get [jobid,jobid... | filter] (get all or specified jobs)
+        get [jobid,jobid... | filter] (get all or specified job info as JSON)
         ls [filter] (list job ids)
             filter for get/ls:
                 node= pool= state= (query filters for jobs)
 
-        kill <jobid(s)|filter> (kill jobs matching ids or criteria)
+        kill <jobid> [,jobid...]
 
-        nodes (prints all node status)
+        status (prints a cluster status tree)
 
-        pools (prints all pools and free slots)
+        nodes (prints full node status JSON)
 
-        config [key=value|file=<filename>] [node]
+        pools (prints full pool status JSON)
+
+        config [key=value] [node]
             get/sends config to directly connected or specified node
 
     generic options are: 

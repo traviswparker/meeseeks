@@ -8,8 +8,6 @@ import time
 from meeseeks import Client
 from meeseeks.util import cmdline_parser, read_cfg_files
 
-def pretty_print(d): print (json.dumps(d, sort_keys=True, indent=4))
-
 def usage():
     print("""
 %s [options] <command> [args...]
@@ -26,16 +24,18 @@ def usage():
                 state= (change existing job state, 'new' will restart finished job)
                 hold= (1=queue but do not start job)
 
-        get [jobid,jobid... | filter] (get all or specified jobs)
+        get [jobid,jobid... | filter] (get all or specified job info as JSON)
         ls [filter] (list job ids)
             filter for get/ls:
                 node= pool= state= (query filters for jobs)
 
         kill <jobid> [,jobid...]
 
-        nodes (prints all node status)
+        status (prints a cluster status tree)
 
-        pools (prints all pools and free slots)
+        nodes (prints full node status JSON)
+
+        pools (prints full pool status JSON)
 
         config [key=value] [node]
             get/sends config to directly connected or specified node
@@ -46,6 +46,56 @@ def usage():
         refresh= (interval to continuously refresh status until no jobs left)
 
 """%sys.argv[0])
+
+def pretty_print(d): print (json.dumps(d, sort_keys=True, indent=4))
+
+def print_status(**kwargs):      
+    nodes=client.status().get('nodes',{})
+    pools=client.status().get('pools',{})
+    #put pool and job status on nodes
+    for n,node in nodes.items():
+        for p,pnodes in pools.items():
+            if n in pnodes: node.setdefault('free',{})[p]=pnodes[n]
+            jobs=client.get(pool=p,node=n,**kwargs)
+            if jobs: node.setdefault('jobs',{})[p]=jobs
+    #now we put nodes under other nodes
+    s=nodes
+    def _tree(s):
+        c=False
+        for n in list(s.keys()):
+            if n in s: #already moved?
+                node=s[n]
+                for dn in node.get('routing',[]):
+                    if dn in s and dn != n: #we can move this node
+                        s[n].setdefault('next',{})[dn]=s[dn]
+                        del s[dn]
+                        c=True
+                if s[n].get('next'): c|=_tree(s[n]['next']) #walk downstream
+        return c
+    _tree(s)
+    #now we print the tree
+    def _print(s,i=0):
+        c=False
+        for n,node in sorted(s.items()):
+            l='\t'*i + n+'\t'
+            if node.get('online'): l+='online'
+            else: l+='offline'
+            l+='\tloadavg: %s'%node.get('loadavg')
+            print(l)
+            pn=set(node.get('free',{}).keys())|set(node.get('jobs',{}).keys())
+            for p in sorted(pn):
+                l='\t'*i + '\tpool '+p
+                jobs=node.get('jobs',{}).get(p,{})
+                l+='\t%s jobs'%len(jobs)
+                free=node.get('free',{}).get(p)
+                if type(free) is int: l+='\t%s slots free'%free
+                print (l)
+                for (jid,job) in sorted(jobs.items(),key=lambda j: (j[1].get('state')) ):
+                    print('\t'*i + '\t\t%s\t%s\t%s'%(jid,job['state'],' '.join(job.get('args',[]))))
+            print()
+            if 'next' in node:
+                _print(node['next'],i+1)
+    _print(nodes,0)
 
 # cmd=first non cfg argument
 # args=remaining arguments
@@ -101,6 +151,9 @@ try:
                 for node in args: 
                     print(client.submit(pool='__config',node=node,args=kwargs))
             else: pretty_print(client.request(dict(config=kwargs))) #peer config push
+        elif cmd == 'status': print_status(**kwargs)
+            #pretty print full cluster
+
         else: sys.exit(usage())
     
     #refreshing on jobs
