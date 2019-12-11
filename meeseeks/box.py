@@ -83,7 +83,7 @@ class Box:
                 del pcfg['plugin']
             else: pool_class=Pool
             if p not in self.pools:
-                self.logger.info('creating %s %s'%(pool_class,p))
+                self.logger.info('creating %s %s'%(pool_class.POOL_TYPE,p))
                 self.pools[p]=pool_class(self.name,p,self.state,**pcfg)
             else: self.pools[p].config(**pcfg)
 
