@@ -223,7 +223,7 @@ class State(threading.Thread):
                             if 'node' in jobargs: del jobargs['node']
                             if 'pool' in jobargs: del jobargs['pool']
                 else: #this is a new job
-                    if not jobargs.get('args') or not jobargs.get('pool'): return False #jobs have to have a command and pool to run in
+                    if not jobargs.get('pool'): return False #jobs have to have a pool to run in
                     job={  
                             'submit_ts':time.time(),    #submit timestamp
                             'nodelist':[],              #list of nodes to handle this job

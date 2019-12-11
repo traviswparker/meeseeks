@@ -1,15 +1,36 @@
 #!/usr/bin/env python3
 
 import threading
-import logging
 import subprocess
 import base64
+
+'''PLUGIN API
+    Plugins should implement an alternate Task class
+    Tasks do a job, then they stop existing
+    Tasks should be self-starting and must not block the Pool thread.
+    The Pool will join() the task thread when task.poll() indicates an exit
+    
+    class Task(threading.Thread):
+        
+        def __init__(self,job): #we're passed a job dict but we can't update it
+            self.info={} #the Pool will use Task.info to update the job dict
+            ...start the task thread here and update info...
+
+        def kill(self):
+            #this should stop the task thread and update info (if the thread doesn't at exit)
+
+        def poll(self):
+            #this should poll the task thread and return
+            None: task is running
+            True: task finished normally
+            False: task failed
+'''
 
 class Task(threading.Thread):
     '''subprocess manager'''        
     def __init__(self,job):
-        threading.Thread.__init__(self,target=self.__task_run)
         popen_args={}
+        self.info={} #info to update job
         self.stdin=self.stdout=self.stderr=None #file handles if redirecting
         self.stdout_data=self.stderr_data=None #output if capturing
 
@@ -37,12 +58,18 @@ class Task(threading.Thread):
             
         # start subprocess. If this raises we don't start a thread
         self.__sub=subprocess.Popen(job.get('args'), **popen_args)
-        self.pid=self.__sub.pid
-        self.start() #thread will wait on subprocess
+        self.info['pid']=self.__sub.pid #set pid in job
+        #thread will wait on subprocess
+        threading.Thread.__init__(self,name=self.__sub.pid,target=self.__task_run)
+        self.start() 
     
     def __task_run(self): 
         # block here until process finishes
         stdout,stderr=self.__sub.communicate()
+
+        #clear pid and set rc
+        self.info['pid']=None
+        self.info['rc']=self.__sub.poll()
 
         # close file handles
         if self.stdin: self.stdin.close()
@@ -50,12 +77,12 @@ class Task(threading.Thread):
         if self.stderr: self.stderr.close()
 
         # return output as a base64 string if we got any
-        if stdout: self.stdout_data=base64.b64encode(stdout).decode()
-        if stderr: self.stderr_data=base64.b64encode(stderr).decode()
+        if stdout: self.info['stdout_data']=base64.b64encode(stdout).decode()
+        if stderr: self.info['stderr_data']=base64.b64encode(stderr).decode()
 
     def kill(self): self.__sub.kill()
     def poll(self): 
         #return None until the thread exits so we can reliably capture output
         if self.is_alive(): return None
         if self.__sub.poll() is None: self.__sub.kill() #thread is dead but subprocess is not, kill it
-        return self.__sub.poll() #return subprocess rc
+        return (not self.__sub.poll()) #return True if success and False if failure

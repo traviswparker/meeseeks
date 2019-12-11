@@ -3,6 +3,17 @@
 import sys
 import json
 import ssl
+import importlib
+
+def import_plugin(plugin):
+    '''imports by path.module.Plugin and returns the plugin class'''
+    m=importlib.import_module('.'.join(plugin.split('.')[:-1]))
+    try: attrlist = m.__all__
+    except AttributeError: attrlist = dir (m)
+    except Exception as e:
+        print (e,file=sys.stderr)
+        return None
+    return getattr (m,plugin.split('.')[-1])
 
 def read_cfg_files(args):
     cfg={}

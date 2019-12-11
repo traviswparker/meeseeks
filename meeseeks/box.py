@@ -12,7 +12,7 @@ import socketserver
 from .state import State
 from .node import Node
 from .pool import Pool
-from .util import create_ssl_context
+from .util import create_ssl_context, import_plugin
 
 class RequestHandler(socketserver.StreamRequestHandler):
     '''control socket request handler'''
@@ -77,9 +77,14 @@ class Box:
         for p in pools.keys():
             pcfg=self.defaults.copy()
             pcfg.update(pools[p])
+            #load plugin if specified
+            if 'plugin' in pcfg:
+                pool_class=import_plugin(pcfg['plugin'])
+                del pcfg['plugin']
+            else: pool_class=Pool
             if p not in self.pools:
-                self.logger.info('creating pool %s'%p)
-                self.pools[p]=Pool(self.name,p,self.state,**pcfg)
+                self.logger.info('creating %s %s'%(pool_class,p))
+                self.pools[p]=pool_class(self.name,p,self.state,**pcfg)
             else: self.pools[p].config(**pcfg)
 
         #stop/init nodes

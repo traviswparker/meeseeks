@@ -98,8 +98,7 @@ try:
         elif cmd == 'config': 
             if 'file' in kwargs: kwargs.update(read_cfg_files(kwargs['file']))
             if args:
-                for node in args:
-                    if not kwargs: kwargs={'name':node} #dummy config to allow job submit
+                for node in args: 
                     print(client.submit(pool='__config',node=node,args=kwargs))
             else: pretty_print(client.request(dict(config=kwargs))) #peer config push
         else: sys.exit(usage())
@@ -110,7 +109,6 @@ try:
         while True: 
             if jids is True: jobs=client.get(**kwargs)
             else: jobs=dict((jid,client.get_job(jid)) for jid in jids)
-            print (jobs)
             if not any(jobs.values()): break #exit when no jobs left
             #print updates (when job seq != saved seq)
             updates=dict((jid,job) for (jid,job) in jobs.items() if job['seq'] != seq.get(jid))

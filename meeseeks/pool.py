@@ -6,13 +6,33 @@ import logging
 
 from .task import Task
 
+'''PLUGIN API
+    The Pool class can be inherited to create a pool that does something other than spawn processes.
+    To do this, replace the Task class.
+
+    import threading
+    from meeseeks.pool import Pool
+    
+    class MyTask:
+        ...(see task module for details)...
+
+    class MyPool(Pool): 
+        POOL_TYPE='MyPool'
+        TASK_CLASS=MyTask
+        #we don't change anything else in Pool
+
+'''
+
 class Pool(threading.Thread):
     '''job queue manager'''
+    POOL_TYPE='Pool'
+    TASK_CLASS=Task
+
     def __init__(self,__node,__pool,__state,**cfg):
         self.node=__node #node we are running on
         self.pool=__pool #pool we service
         self.state=__state #state thread
-        threading.Thread.__init__(self,daemon=True,name=self.node+'.Pool.'+self.pool,target=self.__pool_run)
+        threading.Thread.__init__(self,daemon=True,name=self.node+'.'+self.POOL_TYPE+'.'+self.pool,target=self.__pool_run)
         self.logger=logging.getLogger(self.name)
         self.shutdown=threading.Event()
         self.__tasks={} #map of job_id -> Task object
@@ -31,47 +51,44 @@ class Pool(threading.Thread):
         '''caaaaaaan do!'''
         job=self.state.get_job(jid)
         try: 
-            self.__tasks[jid]=Task(job)
-            pid=self.__tasks[jid].pid
+            self.__tasks[jid]=self.TASK_CLASS(job)
             self.state.update_job(jid,
                 state='running',
                 start_ts=time.time(),
-                pid=pid,
-                start_count=job['start_count']+1
+                start_count=job['start_count']+1, 
+                **self.__tasks[jid].info
             )
-            self.logger.info('started %s [%s]'%(jid,pid))
+            self.logger.info('started %s [%s]'%(jid,self.__tasks[jid].name))
         except Exception as e:
             self.logger.warning(e,exc_info=True)
             self.state.update_job(jid,state='failed',error=str(e))
     
     def kill_job(self,jid,job):
         '''kill running task and wait for task to exit'''
-        self.logger.info('killing %s [%s]'%(jid,self.__tasks[jid].pid))
+        self.logger.info('killing %s [%s]'%(jid,self.__tasks[jid].name))
         try:
             self.__tasks[jid].kill()
             self.__tasks[jid].join()
         except Exception as e: self.logger.warning(e,exc_info=True)
-        self.state.update_job(jid,state='killed')
+        self.state.update_job(jid,state='killed',**self.__tasks[jid].info)
 
     def check_job(self,jid,job):
         state=job['state']
-        rc=self.__tasks[jid].poll()
-        if rc is not None: #task exited
+        #r will be None if running, True if success, False if failure
+        r=self.__tasks[jid].poll()
+        if r is not None: #task exited
             fail_count=job['fail_count']
             if state == 'running':
-                if rc == 0: state='done'
+                if r: state='done'
                 else: 
                     state='failed'
                     fail_count+=1
             self.state.update_job( jid,
                 state=state,
                 end_ts=time.time(),
-                rc=rc, 
-                pid=None, 
-                fail_count=fail_count,
-                stdout_data=self.__tasks[jid].stdout_data,
-                stderr_data=self.__tasks[jid].stderr_data )
-            self.logger.info("job %s %s (%s)"%(jid,state,rc))
+                fail_count=fail_count, 
+                **self.__tasks[jid].info)
+            self.logger.info("job %s %s"%(jid,state))
             del self.__tasks[jid] #free the slot
         #was job killed or max runtime
         elif job.get('runtime') and (time.time()-job['start_ts'] > job['runtime']):
@@ -80,6 +97,7 @@ class Pool(threading.Thread):
         elif self.max_runtime and (time.time()-job['start_ts'] > self.max_runtime):
             self.logger.warning('job %s exceeded pool runtime of %s'%(jid,self.max_runtime))
             self.kill_job(jid,job)
+        return self.__tasks[jid].info #return task info if any
 
     def __pool_run(self):
         while not self.shutdown.is_set():
@@ -88,16 +106,17 @@ class Pool(threading.Thread):
                 pool_jobs=self.state.get(node=self.node,pool=self.pool)
                 for jid,job in pool_jobs.items():
                     #check running jobs
+                    task_info={} #task info if running
                     if jid in self.__tasks:
                         if job['state'] == 'killed': self.kill_job(jid,job)
-                        self.check_job(jid,job)
+                        task_info=self.check_job(jid,job)
                     elif (job['state'] == 'running'): #job is supposed be running but isn't?
                         self.logger.warning('job %s in state running but no task'%jid)
                         self.state.update_job( jid, state='failed', error='crashed' )
                     #update queued/running jobs
                     if (job['state'] == 'running' or job['state'] == 'waiting') \
                         and (time.time()-job['ts'] > self.update):
-                            self.state.update_job(jid) #touch it so it doesn't expire
+                            self.state.update_job(jid,**task_info) #touch it so it doesn't expire
                     #check to see if we can start a job
                     elif job['state'] == 'new' or job['state'] == 'waiting' \
                         or (job['state'] == 'done' and job.get('restart')) \
@@ -126,11 +145,7 @@ class Pool(threading.Thread):
         for jid in list(self.__tasks.keys()):
             job=pool_jobs[jid]
             self.kill_job(jid,job)
-            del self.__tasks[jid] 
-            self.state.update_job( jid,
-                state='failed',
-                error='shutdown',
-                pid=None )
+            self.state.update_job( jid, state='failed', error='shutdown')
 
         #at shutdown remove self from pool status
         self.state.update_pool_status(self.pool,self.node,False)
