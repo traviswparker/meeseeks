@@ -75,13 +75,18 @@ class State(threading.Thread):
         self.__seq=1 #update sequence number. Always increments.
         self.__pool_ts=0 #pool status timestamp, cleaned up every expire
         self.hist_fh=None
+        self.state_file=None
+        self.checkpoint=None
         self.config(**cfg)
+        self.__load_state()
         self.start()
 
-    def config(self,expire=60,expire_active_jobs=True,history=None,**cfg):
+    def config(self,expire=60,expire_active_jobs=True,history=None,file=None,checkpoint=None,**cfg):
         with self.__lock:
             if expire: self.expire=int(expire)
             self.expire_active_jobs=expire_active_jobs
+            if file: self.state_file=file
+            if checkpoint is not None: self.checkpoint=checkpoint
             if history:
                 try: self.hist_fh=open(history,'a')
                 except Exception as e: self.logger.warning('%s:%s'%(history,e))
@@ -94,6 +99,22 @@ class State(threading.Thread):
             json.dump({jid:self.__jobs[jid]},self.hist_fh)
             self.hist_fh.write('\n')
             self.hist_fh.flush()
+
+    def __save_state(self):
+        if self.state_file:
+            try:
+                with open(self.state_file,'w') as fh: 
+                    json.dump(self.__jobs,fh)
+                    self.logger.info('saved state to %s'%self.state_file)
+            except Exception as e: self.logger.warning('%s:%s'%(self.state_file,e))
+
+    def __load_state(self):
+        if self.state_file:
+            try:
+                with open(self.state_file) as fh: 
+                    self.__jobs=json.load(fh)
+                    self.logger.info('loaded state from %s'%self.state_file)
+            except Exception as e: self.logger.warning('%s:%s'%(self.state_file,e)) 
 
     #these return a copy of the private state, use update_ methods to modify it
     def get_pool_status(self): 
@@ -242,6 +263,7 @@ class State(threading.Thread):
 
     def __state_run(self):
         self.logger.info('started')
+        checkpoint_count=0
         while not self.shutdown.is_set():
             self.logger.debug('status %s'%self.__node_status)
             self.logger.debug('pools %s'%self.__pool_status)
@@ -286,7 +308,13 @@ class State(threading.Thread):
                                 del self.__pool_status[pool]
                         self.__pool_ts=time.time()
                 except Exception as e: self.logger.warning(e,exc_info=True)
+                if self.checkpoint:
+                    checkpoint_count=(checkpoint_count+1) % self.checkpoint
+                    if not checkpoint_count: self.__save_state()
             time.sleep(1)
 
         #close history file if we have one
         if self.hist_fh: self.hist_fh.close()
+
+        #save state at shutdown
+        with self.__lock: self.__save_state()

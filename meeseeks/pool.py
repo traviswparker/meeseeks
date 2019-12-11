@@ -75,6 +75,7 @@ class Pool(threading.Thread):
     def check_job(self,jid,job):
         state=job['state']
         #r will be None if running, True if success, False if failure
+        info=self.__tasks[jid].info
         r=self.__tasks[jid].poll()
         if r is not None: #task exited
             fail_count=job['fail_count']
@@ -97,7 +98,7 @@ class Pool(threading.Thread):
         elif self.max_runtime and (time.time()-job['start_ts'] > self.max_runtime):
             self.logger.warning('job %s exceeded pool runtime of %s'%(jid,self.max_runtime))
             self.kill_job(jid,job)
-        return self.__tasks[jid].info #return task info if any
+        return info #return task info if any
 
     def __pool_run(self):
         while not self.shutdown.is_set():

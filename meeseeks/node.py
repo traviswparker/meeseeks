@@ -88,9 +88,9 @@ class Node(threading.Thread):
             }
 
             #get status if poll interval
-            if not (poll % self.poll_count): req.update(status={}) 
-            poll+=1
-
+            poll=(poll+1)%self.poll_count
+            if not poll: req.update(status={}) 
+            
             #make request
             responses=self.request([req])
             updated=None
