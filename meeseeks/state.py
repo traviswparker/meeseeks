@@ -75,15 +75,17 @@ class State(threading.Thread):
         self.__seq=1 #update sequence number. Always increments.
         self.__pool_ts=0 #pool status timestamp, cleaned up every expire
         self.hist_fh=None
+        self.__hist_seq=0 #history sequence number.
         self.state_file=None
         self.checkpoint=None
         self.config(**cfg)
         self.__load_state()
         self.start()
 
-    def config(self,expire=60,expire_active_jobs=True,history=None,file=None,checkpoint=None,**cfg):
+    def config(self,expire=60,expire_active_jobs=True,timeout=60,history=None,file=None,checkpoint=None,**cfg):
         with self.__lock:
             if expire: self.expire=int(expire)
+            if timeout: self.timeout=int(timeout)
             self.expire_active_jobs=expire_active_jobs
             if file: self.state_file=file
             if checkpoint is not None: self.checkpoint=checkpoint
@@ -95,7 +97,7 @@ class State(threading.Thread):
                 self.hist_fh=None
 
     def write_history(self,jid):
-        if self.__jobs[jid]['state'] in self.JOB_INACTIVE and self.hist_fh:
+        if self.hist_fh:
             json.dump({jid:self.__jobs[jid]},self.hist_fh)
             self.hist_fh.write('\n')
             self.hist_fh.flush()
@@ -180,8 +182,6 @@ class State(threading.Thread):
                     for node,slots in nodes.items(): 
                         self.__update_pool_status(pool,node,slots)
             except Exception as e: self.logger.warning(e,exc_info=True)
-        #if updated job is finished, write it to history
-        for jid in updated: self.write_history(jid)
         #return updated items
         return updated
 
@@ -201,7 +201,6 @@ class State(threading.Thread):
                     self.__jobs[jid].update(seq=self.__seq,ts=time.time(),**data)
                     self.__seq+=1
                     #if done, write job to history
-                    self.write_history(jid)
                     return self.__jobs.get(jid)
                 else: return False
             except Exception as e: self.logger.warning(e,exc_info=True)
@@ -255,8 +254,6 @@ class State(threading.Thread):
                 job.update(seq=self.__seq,ts=time.time(),**jobargs)
                 if not job.get('node'): job['node']=self.node #set job to be handled/routed by this node
                 self.__jobs[jid]=job
-                #if done, write job to history
-                self.write_history(jid)
                 self.__seq+=1
                 return jid
             except Exception as e: self.logger.warning(e,exc_info=True)
@@ -269,42 +266,47 @@ class State(threading.Thread):
             self.logger.debug('pools %s'%self.__pool_status)
             with self.__lock:
                 try:
-                    #look for jobs that should have been updated
+                    #write recently finished jobs to history
+                    for jid,job in self.__jobs.items():
+                        if job['seq'] > self.__hist_seq and job['state'] in self.JOB_INACTIVE:
+                            self.write_history(jid)
+                    self.__hist_seq=self.__seq
+                    #scan jobs
                     for jid,job in self.__jobs.copy().items():
                         if time.time()-job['ts'] > self.expire: 
-                            #jobs that have ended for some reason will no longer be updated, so expire them.
+                            #jobs that have ended will no longer be updated, so expire them.
                             if job['state'] in self.JOB_INACTIVE:
-                                self.logger.debug('expiring job %s'%jid)
+                                self.logger.debug('expiring inactive job %s'%jid)
                                 del self.__jobs[jid]
-                            elif self.expire_active_jobs: 
+                            #if we expire waiting/running jobs
+                            elif self.expire_active_jobs and job['state'] in self.JOB_ACTIVE: 
                                 #this job *should* have been updated
-                                self.logger.warning('job %s not updated in %s seconds'%(jid,self.expire))
+                                self.logger.warning('active job %s not updated in %s seconds'%(jid,self.expire))
                                 #if we restart on fail and have a nodelist
                                 if job.get('retries') and job['nodelist']:
                                     # try kicking it back to the first node for rescheduling
                                     self.__jobs[jid].update(node=job['nodelist'][0]) 
                                 #set job to failed, it might restart if it can
                                 self.__jobs[jid].update(seq=self.__seq,ts=time.time(),state='failed',error='expired')
-                                self.write_history(jid)
                                 self.__seq+=1
                     #set nodes that have not sent status to offline
                     for node,node_status in self.__node_status.copy().items():
-                        if time.time()-node_status.get('ts',0) > self.expire:
+                        if time.time()-node_status.get('ts',0) > self.timeout:
                             if node_status.get('online'):
                                 self.logger.warning('node %s not updated in %s seconds'%(node,self.expire))
                                 self.__update_node_status(node,online=False)
                             elif node_status.get('remove'): #offline node is marked for upstream removal
-                                self.logger.info('expiring node %s' %node)
+                                self.logger.info('removing node %s' %node)
                                 del self.__node_status[node]
-                    #expire removed nodes from pool status and remove empty pools
-                    if time.time()-self.__pool_ts > self.expire:
+                    #remove offline nodes from pool status and remove empty pools
+                    if time.time()-self.__pool_ts > self.timeout:
                         for pool,nodes in self.__pool_status.copy().items():
                             for node,slots in nodes.copy().items():
                                 if slots is False: 
-                                    self.logger.info('expiring node %s from pool %s'%(node,pool))
+                                    self.logger.info('removing node %s from pool %s'%(node,pool))
                                     del self.__pool_status[pool][node]
                             if not self.__pool_status[pool]:
-                                self.logger.info('expiring empty pool %s'%(pool))
+                                self.logger.info('removing empty pool %s'%(pool))
                                 del self.__pool_status[pool]
                         self.__pool_ts=time.time()
                 except Exception as e: self.logger.warning(e,exc_info=True)

@@ -42,32 +42,37 @@ The config sections, objects, and defaults are as follows:
     }
 
     listen: { #configures the listening socket
-        address: localhost
-        port: 13700
-        ssl: {SSL config, TODO}
+        address: defaults to localhost
+        port: defaults to 13700
+        ssl: {SSLContext config}
     }
 
     state: { #configures the state manager
-        expire: 60  (how long in seconds a node or job will persist without being updated
-                     the state of completed/failed/killed jobs will be available for this long)
+        expire: 60  # how long in seconds a job will persist without being updated
+                    # the state of completed/failed/killed jobs will be available for this long
+        expire_active_jobs: true #if set false, active jobs will not be expired
+        timeout: 60  #timeout in seconds to receive updated node status before it is marked offline
+        file: <filename> #if set, save/reload state from this file)
+        checkpoint: <int> #if set, save state to file every <int> seconds)
+        history: <filename> #if set, write finished/expired jobs to this file
     }
 
     nodes: list of downstream nodes to connect to
         { <nodename>:{
             address: defaults to <nodename>
-            port: 13700
-            ssl: { ... }
-            refresh: 1 (how often in seconds we sync state)
-            poll: 10 (how often in seconds we request full status)
-            timeout: 10 (timeout in seconds to connect/send/receive data)
+            port: defaults to 13700
+            ssl: {SSLContext config}
+            refresh: 1 # how often in seconds we sync state
+            poll: 10 # how often in seconds we request node/pool status
+            timeout: 10 # timeout in seconds to connect/send/receive data
         } , ... }
 
     pools: list of job processing pools
         { <poolname>:{
             slots: null # if set, limit of how many jobs can run simultaneously
             max_runtime: null # if set, limit of how long a job can run for
-            refresh: 1 # how often in seconds the queue is scanned for new/finished jobs
             update: 30 # how often in seconds the state of running jobs is updated to prevent expiration
+            plugin: <path.module.Class> to provide this pool instance
         } , ... }
     }
 
@@ -100,7 +105,7 @@ example:
             "id": string , #job id, optional, MUST be unique. A UUID will be generated if id is omitted
                            #if an existing job id is given, the job will be modified if possible
             "pool": string , #pool name, REQUIRED.
-            "args": [executable, arg, arg, arg] , #REQUIRED. the command to run and arguments. If subprocess.Popen likes it, it will work.
+            "args": [executable, arg, arg, arg] , #The command to run and arguments. If subprocess.Popen likes it, it will work.
             "node": node #optional. Strict node selection. Job will fail if node unavailable.
             "nodelist": [nodename, ... ], #optional. A list of preferred nodes to use. See Job Routing. 
         

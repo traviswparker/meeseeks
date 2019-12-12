@@ -39,8 +39,7 @@ class Pool(threading.Thread):
         self.config(**cfg)
         self.start()
 
-    def config(self,refresh=1,update=30,slots=0,runtime=0,**cfg):
-        if refresh: self.refresh=int(refresh) #how often we update the job q
+    def config(self,update=30,slots=None,runtime=None,**cfg):
         if update: self.update=int(update) #how often we update the state of running/waiting jobs
         if runtime: self.max_runtime=int(runtime)
         else: self.max_runtime=None
@@ -139,7 +138,7 @@ class Pool(threading.Thread):
                 else: slots_free=None #no slots set
                 self.state.update_pool_status(self.pool,self.node,slots_free)
             except Exception as e: self.logger.error(e,exc_info=True)
-            time.sleep(self.refresh)
+            time.sleep(1)
 
         #at shutdown, kill all jobs, mark as failed
         pool_jobs=self.state.get(node=self.node,pool=self.pool)
