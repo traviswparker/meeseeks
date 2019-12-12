@@ -179,7 +179,8 @@ failed: job failed. rc will be set, or error will be set. If the job expired, no
 
         kill <jobid> [,jobid...]
 
-        status (prints a cluster status tree)
+        show [filter] {nodes pools jobs active} 
+            (prints a cluster status tree, specify which elements to show, defaults to all)
 
         nodes (prints full node status JSON)
 
@@ -192,4 +193,3 @@ failed: job failed. rc will be set, or error will be set. If the job expired, no
         address= (default localhost)
         port= (defult 13700)
         refresh= (interval to continuously refresh status until no jobs left)
-

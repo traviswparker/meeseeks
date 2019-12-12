@@ -31,7 +31,8 @@ def usage():
 
         kill <jobid> [,jobid...]
 
-        status (prints a cluster status tree)
+        show [filter] {nodes pools jobs active} 
+            (prints a cluster status tree, specify which elements to show, defaults to all)
 
         nodes (prints full node status JSON)
 
@@ -49,9 +50,11 @@ def usage():
 
 def pretty_print(d): print (json.dumps(d, sort_keys=True, indent=4))
 
-def print_status(**kwargs):      
+def show(args,**kwargs):      
     nodes=client.status().get('nodes',{})
     pools=client.status().get('pools',{})
+    if 'nodes' not in args and 'pools' not in args and 'jobs' not in args:
+        args.extend(['nodes','pools','jobs'])
     #put pool and job status on nodes
     for n,node in nodes.items():
         for p,pnodes in pools.items():
@@ -61,7 +64,6 @@ def print_status(**kwargs):
     #now we put nodes under other nodes
     s=nodes
     def _tree(s):
-        c=False
         for n in list(s.keys()):
             if n in s: #already moved?
                 node=s[n]
@@ -70,29 +72,34 @@ def print_status(**kwargs):
                         s[n].setdefault('next',{})[dn]=s[dn]
                         del s[dn]
                         c=True
-                if s[n].get('next'): c|=_tree(s[n]['next']) #walk downstream
-        return c
+                if s[n].get('next'): _tree(s[n]['next']) #walk downstream
     _tree(s)
     #now we print the tree
     def _print(s,i=0):
-        c=False
         for n,node in sorted(s.items()):
-            l='\t'*i + n+'\t'
-            if node.get('online'): l+='online'
-            else: l+='offline'
-            l+='\tloadavg: %s'%node.get('loadavg')
-            print(l)
+            if 'nodes' in args:
+                l='\t'*i + n+'\t'
+                if node.get('online'): l+='online'
+                else: l+='offline'
+                l+='\t%s'%node.get('loadavg')
+                print(l)
             pn=set(node.get('free',{}).keys())|set(node.get('jobs',{}).keys())
             for p in sorted(pn):
-                l='\t'*i + '\tpool '+p
+                if 'nodes' in args: l='\t'*i + '\t'
+                else: l=''
+                l+='pool %s@%s'%(p,n)
                 jobs=node.get('jobs',{}).get(p,{})
-                l+='\t%s jobs'%len(jobs)
+                jc=len(jobs)
+                l+='\t%s jobs'%jc
                 free=node.get('free',{}).get(p)
                 if type(free) is int: l+='\t%s slots free'%free
-                print (l)
-                for (jid,job) in sorted(jobs.items(),key=lambda j: (j[1].get('state')) ):
-                    print('\t'*i + '\t\t%s\t%s\t%s'%(jid,job['state'],' '.join(job.get('args',[]))))
-            print()
+                if 'pools' in args and ('active' not in args or jc): print (l)
+                l=''
+                if 'nodes' in args: l+='\t'*i+'\t'
+                if 'pools' in args: l+='\t'
+                if 'jobs' in args:
+                    for (jid,job) in sorted(jobs.items(),key=lambda j: (j[1].get('state')) ):
+                        print(l+'%s\t%s\t%s'%(jid,job['state'],' '.join(job.get('args',[]))))
             if 'next' in node:
                 _print(node['next'],i+1)
     _print(nodes,0)
@@ -151,8 +158,7 @@ try:
                 for node in args: 
                     print(client.submit(pool='__config',node=node,args=kwargs))
             else: pretty_print(client.request(dict(config=kwargs))) #peer config push
-        elif cmd == 'status': print_status(**kwargs)
-            #pretty print full cluster
+        elif cmd == 'show': show(args,**kwargs) #pretty print full cluster
 
         else: sys.exit(usage())
     
