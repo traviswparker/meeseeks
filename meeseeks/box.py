@@ -178,10 +178,12 @@ class Box:
             self.restart.clear()
             while not self.shutdown.is_set() and not self.restart.is_set():
                 #update our node status
+                #we can route to nodes we see via our connected nodes
                 self.state.update_node_status( self.name,
                     online=True,
                     ts=time.time(),
-                    loadavg=self.get_loadavg() )
+                    loadavg=self.get_loadavg(),
+                    routing=list(self.state.get_node_status().keys()) ) 
 
                 #job routing logic
                 try:

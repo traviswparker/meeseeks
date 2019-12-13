@@ -31,8 +31,8 @@ def usage():
 
         kill <jobid> [,jobid...]
 
-        show [filter] {nodes pools jobs active} 
-            (prints a cluster status tree, specify which elements to show, defaults to all)
+        show [filter] {nodes pools jobs active tree} 
+            (prints a cluster status, specify which elements to show, defaults to all)
 
         nodes (prints full node status JSON)
 
@@ -50,9 +50,9 @@ def usage():
 
 def pretty_print(d): print (json.dumps(d, sort_keys=True, indent=4))
 
-def show(args,**kwargs):      
-    nodes=client.status().get('nodes',{})
-    pools=client.status().get('pools',{})
+def show(status,args,**kwargs):      
+    nodes=status.get('nodes',{})
+    pools=status.get('pools',{})
     if 'nodes' not in args and 'pools' not in args and 'jobs' not in args:
         args.extend(['nodes','pools','jobs'])
     #put pool and job status on nodes
@@ -73,7 +73,7 @@ def show(args,**kwargs):
                         s[n].setdefault('next',{})[dn]=s[dn]
                         del s[dn]
                 if s[n].get('next'): _tree(s[n]['next']) #walk downstream
-    _tree(s)
+    if 'tree' in args: _tree(s)
     #now we print the tree
     def _print(s,i=0):
         for n,node in sorted(s.items()):
@@ -161,7 +161,7 @@ try:
                 for node in args: 
                     print(client.submit(pool='__config',node=node,args=kwargs))
             else: pretty_print(client.request(dict(config=kwargs))) #peer config push
-        elif cmd == 'show': show(args,**kwargs) #pretty print full cluster
+        elif cmd == 'show': show(client.status(),args,**kwargs) #pretty print full cluster
 
         else: sys.exit(usage())
     

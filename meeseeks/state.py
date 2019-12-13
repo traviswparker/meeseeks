@@ -180,10 +180,6 @@ class State(threading.Thread):
                         updated.append(jid)
                 #update our status from incoming status data
                 for node,node_status in status.get('nodes',{}).items():
-                    #for the node we are syncing from
-                    #save the list of nodes it has seen
-                    if remote_node and node==remote_node: 
-                        node_status['routing']=list(status['nodes'].keys())
                     self.__update_node_status(node,**node_status)
                 for pool,nodes in status.get('pools',{}).items():
                     for node,slots in nodes.items(): 
