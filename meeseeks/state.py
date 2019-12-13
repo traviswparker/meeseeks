@@ -22,9 +22,11 @@ class State(threading.Thread):
                       job will be reassigned to the start of the nodelist if provided
             runtime: job maximum runtime in seconds
             hold: if true, job will not run until cleared
+
         job attributes:
             node: the node the job is assigned to
             state: the job state (new,waiting,running,done,failed,killed)
+            active: True if the job is still being tracked. Finished jobs will have active=False pending expiration
             rc: exit code if job done/failed
             error: error details if job did not spawn or exit
             stdout: base64 encoded stdout after exit if not redirected to a file
@@ -58,7 +60,7 @@ class State(threading.Thread):
     #states of inactive jobs
     JOB_INACTIVE=['done','failed','killed']
 
-    #states of active jobs
+    #states of active job in a pool. 'new' is not included here.
     JOB_ACTIVE=['waiting','running']
 
     def __init__(self,__node=None,**cfg):
@@ -147,12 +149,17 @@ class State(threading.Thread):
                     and self.__pool_status[pool][node] is not False:
                         self.__update_pool_status(pool,node,False)
 
-    def get(self,id=None,ts=None,seq=None,**query):
-        '''dump all jobs for a node/pool/state/or updated after a certain ts/seq'''
+    def get(self,ids=None,ts=None,seq=None,**query):
+        '''dump a list of jobs or all jobs for a node/pool/state/or updated after a certain ts/seq'''
         with self.__lock:
-            try: #filter by ts/seq greater than
-                r=dict((jid,job.copy()) for (jid,job) in self.__jobs.items() if \
-                     (not ts or job['ts']>ts) and (not seq or job['seq']>seq) )
+            try: 
+                #turn single job id into list
+                if ids and type(ids) is not list: ids=[ids]
+                #filter by jid list and ts/seq greater than
+                r=dict( (jid,job.copy()) for (jid,job) in self.__jobs.items() if \
+                        (not ids or jid in ids) \
+                        and (not ts or job['ts']>ts) \
+                        and (not seq or job['seq']>seq) )
                 for (k,v) in query.items(): #filter by arbitrary criteria
                     r=dict((jid,job) for (jid,job) in r.items() if job.get(k)==v)
                 return r
@@ -193,14 +200,16 @@ class State(threading.Thread):
             except Exception as e: self.logger.warning(e,exc_info=True)
     
     def update_job(self,jid,**data):
-        '''update job jid with k/v in data
+        '''update job jid with k/v in data and set/clear active flag
         this is ONLY to be used by the agent as no sanity checks are performed'''
         with self.__lock:
             try:
                 if jid in self.__jobs: 
+                    if 'state' in data: #set active flag to match state
+                        if data['state'] in self.JOB_INACTIVE: data['active']=False
+                        else: data['active']=True
                     self.__jobs[jid].update(seq=self.__seq,ts=time.time(),**data)
                     self.__seq+=1
-                    #if done, write job to history
                     return self.__jobs.get(jid)
                 else: return False
             except Exception as e: self.logger.warning(e,exc_info=True)
@@ -235,10 +244,14 @@ class State(threading.Thread):
                     #do sanity checks on state changes
                     #inactive jobs can only restarted
                     if job['state'] in self.JOB_INACTIVE:
-                        if 'state' in jobargs and jobargs['state']!='new': del jobargs['state']
+                        if 'state' in jobargs:
+                            if jobargs['state']=='new': jobargs['active']=True #set active on restart 
+                            else: del jobargs['state'] #not allowed
                     #other jobs can only killed, and active jobs cannot be moved to another pool/node
                     else:
-                        if 'state' in jobargs and jobargs['state']!='killed': del jobargs['state']
+                        if 'state' in jobargs:
+                            if jobargs['state']=='killed': jobargs['active']=False
+                            else: del jobargs['state']
                         if job['state'] in self.JOB_ACTIVE:
                             if 'node' in jobargs: del jobargs['node']
                             if 'pool' in jobargs: del jobargs['pool']
@@ -247,7 +260,8 @@ class State(threading.Thread):
                     job={  
                             'submit_ts':time.time(),    #submit timestamp
                             'nodelist':[],              #list of nodes to handle this job
-                            'state':'new',              #job state
+                            'state':'new',
+                            'active':True,
                             'start_count':0,             
                             'fail_count':0
                         }

@@ -67,6 +67,7 @@ def show(args,**kwargs):
         for n in list(s.keys()):
             if n in s: #already moved?
                 node=s[n]
+                if not node.get('online'): continue
                 for dn in node.get('routing',[]):
                     if dn in s and dn != n: #we can move this node
                         s[n].setdefault('next',{})[dn]=s[dn]
@@ -99,7 +100,10 @@ def show(args,**kwargs):
                 if 'pools' in args: l+='\t'
                 if 'jobs' in args:
                     for (jid,job) in sorted(jobs.items(),key=lambda j: (j[1].get('state')) ):
-                        print(l+'%s\t%s\t%s'%(jid,job['state'],' '.join(job.get('args',[]))))
+                        print(l+'%s\t%s (%s/%s)\t%s'%(
+                            jid,
+                            job['state'],job['start_count'],job['fail_count'],
+                            ' '.join(job.get('args',[]))) )
             if 'next' in node:
                 _print(node['next'],i+1)
     _print(nodes,0)

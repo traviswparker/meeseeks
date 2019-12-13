@@ -2,8 +2,10 @@
 
 ../meeseeks-box master.cfg &
 
-../meeseeks-box headA.cfg &
-../meeseeks-box headB.cfg &
+../meeseeks-box headA1.cfg &
+../meeseeks-box headB1.cfg &
+../meeseeks-box headA2.cfg &
+../meeseeks-box headB2.cfg &
 
 ../meeseeks-box nodeA1.cfg &
 ../meeseeks-box nodeA2.cfg &
