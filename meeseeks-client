@@ -53,11 +53,17 @@ def pretty_print(d): print (json.dumps(d, sort_keys=True, indent=4))
 def show(status,args,**kwargs):      
     nodes=status.get('nodes',{})
     pools=status.get('pools',{})
+    kwpool=kwargs.get('pool')
+    if kwpool: del kwargs['pool']
+    kwnode=kwargs.get('node')
+    if kwnode: del kwargs['node']
     if 'nodes' not in args and 'pools' not in args and 'jobs' not in args:
         args.extend(['nodes','pools','jobs'])
     #put pool and job status on nodes
     for n,node in nodes.items():
+        if kwnode and n != kwnode: continue
         for p,pnodes in pools.items():
+            if kwpool and p != kwpool: continue
             if n in pnodes: node.setdefault('free',{})[p]=pnodes[n]
             jobs=client.get(pool=p,node=n,**kwargs)
             if jobs: node.setdefault('jobs',{})[p]=jobs
