@@ -138,8 +138,7 @@ class State(threading.Thread):
 
     def update_node_status(self,node,**node_status): 
         '''set node status, remove node from pool if node offline'''
-        with self.__lock:
-            self.__update_node_status(node,**node_status)
+        with self.__lock: self.__update_node_status(node,**node_status)
     def __update_node_status(self,node,**node_status): 
         self.__node_status.setdefault(node,{}).update(**node_status)
         #take offline nodes out of the pools
@@ -175,8 +174,7 @@ class State(threading.Thread):
                 for jid,job in jobs.items():
                     if jid not in self.__jobs or self.__jobs[jid]['ts'] < job['ts']:
                         if not job.get('node'): job['node']=self.node #may not be set from client
-                        self.__jobs.setdefault(jid,{}).update(job,seq=self.__seq)
-                        self.__seq+=1
+                        self.__update_job(jid,**job)
                         updated.append(jid)
                 #update our status from incoming status data
                 for node,node_status in status.get('nodes',{}).items():
@@ -198,16 +196,19 @@ class State(threading.Thread):
     def update_job(self,jid,**data):
         '''update job jid with k/v in data and set/clear active flag
         this is ONLY to be used by the agent as no sanity checks are performed'''
-        with self.__lock:
+        with self.__lock: 
+            if jid in self.__jobs: return self.__update_job(jid,**data)
+            else: return False
+    def __update_job(self,jid,**data): #nolock for internal use
             try:
-                if jid in self.__jobs: 
-                    if 'state' in data: #set active flag to match state
-                        if data['state'] in self.JOB_INACTIVE: data['active']=False
-                        else: data['active']=True
-                    self.__jobs[jid].update(seq=self.__seq,ts=time.time(),**data)
-                    self.__seq+=1
-                    return self.__jobs.get(jid)
-                else: return False
+                if 'state' in data: #set active flag to match state
+                    if data['state'] in self.JOB_INACTIVE: data['active']=False
+                    else: data['active']=True
+                if 'seq' in data: del data['seq'] #replace seq but preserve ts if set
+                if 'ts' not in data: data['ts']=time.time() #if no timestamp, set current
+                self.__jobs.setdefault(jid,{}).update(seq=self.__seq,**data)
+                self.__seq+=1
+                return self.__jobs.get(jid)
             except Exception as e: self.logger.warning(e,exc_info=True)
 
     def kill_jobs(self,*args,**kwargs):
@@ -257,14 +258,12 @@ class State(threading.Thread):
                             'submit_ts':time.time(),    #submit timestamp
                             'nodelist':[],              #list of nodes to handle this job
                             'state':'new',
-                            'active':True,
                             'start_count':0,             
                             'fail_count':0
                         }
-                job.update(seq=self.__seq,ts=time.time(),**jobargs)
+                job.update(**jobargs)
                 if not job.get('node'): job['node']=self.node #set job to be handled/routed by this node
-                self.__jobs[jid]=job
-                self.__seq+=1
+                self.__update_job(jid,**job)
                 return jid
             except Exception as e: self.logger.warning(e,exc_info=True)
 
@@ -295,10 +294,13 @@ class State(threading.Thread):
                                 #if we restart on fail and have a nodelist
                                 if job.get('retries') and job['nodelist']:
                                     # try kicking it back to the first node for rescheduling
-                                    self.__jobs[jid].update(node=job['nodelist'][0]) 
+                                    self.__update_job(jid,node=job['nodelist'][0]) 
                                 #set job to failed, it might restart if it can
-                                self.__jobs[jid].update(seq=self.__seq,ts=time.time(),state='failed',error='expired')
-                                self.__seq+=1
+                                self.__update_job(state='failed',error='expired')
+                            else:
+                                #this is a new job that didn't route, so bump it to retry
+                                self.logger.debug('job %s stuck in state new'%jid)
+                                self.__update_job(jid)
                     #set nodes that have not sent status to offline
                     for node,node_status in self.__node_status.copy().items():
                         if time.time()-node_status.get('ts',0) > self.timeout:
