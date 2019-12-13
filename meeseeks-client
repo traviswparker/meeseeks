@@ -72,7 +72,6 @@ def show(args,**kwargs):
                     if dn in s and dn != n: #we can move this node
                         s[n].setdefault('next',{})[dn]=s[dn]
                         del s[dn]
-                        c=True
                 if s[n].get('next'): _tree(s[n]['next']) #walk downstream
     _tree(s)
     #now we print the tree
