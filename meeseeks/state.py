@@ -26,7 +26,8 @@ class State(threading.Thread):
         job attributes:
             node: the node the job is assigned to
             state: the job state (new,waiting,running,done,failed,killed)
-            active: True if the job is still being tracked. Finished jobs will have active=False pending expiration
+            active: True if the job is being processed by a node.
+                    To move a job: kill the job, wait for active=False, then reassign and set state='new'.
             rc: exit code if job done/failed
             error: error details if job did not spawn or exit
             stdout: base64 encoded stdout after exit if not redirected to a file
@@ -201,9 +202,6 @@ class State(threading.Thread):
             else: return False
     def __update_job(self,jid,**data): #nolock for internal use
             try:
-                if 'state' in data: #set active flag to match state
-                    if data['state'] in self.JOB_INACTIVE: data['active']=False
-                    else: data['active']=True
                 if 'seq' in data: del data['seq'] #replace seq but preserve ts if set
                 if 'ts' not in data: data['ts']=time.time() #if no timestamp, set current
                 self.__jobs.setdefault(jid,{}).update(seq=self.__seq,**data)

@@ -46,12 +46,19 @@ class Pool(threading.Thread):
         if slots: self.slots=int(slots) #number of job slots, or True if not limited
         else: self.slots=True
 
+    def update_job(self,jid,**data):
+        '''hook for state.update_job that sets active flag'''
+        if 'state' in data: #set active flag to match state
+            if data['state'] in self.state.JOB_INACTIVE: data['active']=False
+            else: data['active']=True
+        return self.state.update_job(jid,**data)
+
     def start_job(self,jid):
         '''caaaaaaan do!'''
         job=self.state.get_job(jid)
         try: 
             self.__tasks[jid]=self.TASK_CLASS(job)
-            self.state.update_job(jid,
+            self.update_job(jid,
                 state='running',
                 start_ts=time.time(),
                 start_count=job['start_count']+1, 
@@ -60,7 +67,7 @@ class Pool(threading.Thread):
             self.logger.info('started %s [%s]'%(jid,self.__tasks[jid].name))
         except Exception as e:
             self.logger.warning(e,exc_info=True)
-            self.state.update_job(jid,state='failed',error=str(e))
+            self.update_job(jid,state='failed',error=str(e))
     
     def kill_job(self,jid,job):
         '''kill running task and wait for task to exit'''
@@ -69,7 +76,7 @@ class Pool(threading.Thread):
             self.__tasks[jid].kill()
             self.__tasks[jid].join()
         except Exception as e: self.logger.warning(e,exc_info=True)
-        self.state.update_job(jid,state='killed',killed=True,**self.__tasks[jid].info)
+        self.update_job(jid,state='killed',**self.__tasks[jid].info)
 
     def check_job(self,jid,job):
         state=job['state']
@@ -83,7 +90,7 @@ class Pool(threading.Thread):
                 else: 
                     state='failed'
                     fail_count+=1
-            self.state.update_job( jid,
+            self.update_job( jid,
                 state=state,
                 end_ts=time.time(),
                 fail_count=fail_count, 
@@ -112,11 +119,11 @@ class Pool(threading.Thread):
                         task_info=self.check_job(jid,job)
                     elif (job['state'] == 'running'): #job is supposed be running but isn't?
                         self.logger.warning('job %s in state running but no task'%jid)
-                        self.state.update_job( jid, state='failed', error='crashed' )
+                        self.update_job( jid, state='failed', error='crashed' )
                     #update queued/running jobs
                     if (job['state'] == 'running' or job['state'] == 'waiting') \
                         and (time.time()-job['ts'] > self.update):
-                            self.state.update_job(jid,**task_info) #touch it so it doesn't expire
+                            self.update_job(jid,**task_info) #touch it so it doesn't expire
                     #check to see if we can start a job
                     elif job['state'] == 'new' or job['state'] == 'waiting' \
                         or (job['state'] == 'done' and job.get('restart')) \
@@ -124,7 +131,7 @@ class Pool(threading.Thread):
                             if not job.get('hold') and (not self.slots or (len(self.__tasks) < self.slots)):
                                  self.start_job(jid)
                             #job is waiting for a slot
-                            elif job['state'] != 'waiting': self.state.update_job(jid,state='waiting')
+                            elif job['state'] != 'waiting': self.update_job(jid,state='waiting')
                 #check for orphaned tasks. This shouldn't happen but it can if time jumps.
                 for jid in list(self.__tasks.keys()):
                     if jid not in pool_jobs:
@@ -145,7 +152,7 @@ class Pool(threading.Thread):
         for jid in list(self.__tasks.keys()):
             job=pool_jobs[jid]
             self.kill_job(jid,job)
-            self.state.update_job( jid, state='failed', error='shutdown')
+            self.update_job( jid, state='failed', error='shutdown')
 
         #at shutdown remove self from pool status
         self.state.update_pool_status(self.pool,self.node,False)
