@@ -241,17 +241,14 @@ class State(threading.Thread):
                     #do sanity checks on state changes
                     #inactive jobs can only restarted
                     if job['state'] in self.JOB_INACTIVE:
-                        if 'state' in jobargs:
-                            if jobargs['state']=='new': jobargs['active']=True #set active on restart 
-                            else: del jobargs['state'] #not allowed
-                    #other jobs can only killed, and active jobs cannot be moved to another pool/node
+                        if 'state' in jobargs and jobargs['state']!='new': 
+                            del jobargs['state'] #not allowed
+                    #active jobs can only be killed, and cannot be moved
                     else:
-                        if 'state' in jobargs:
-                            if jobargs['state']=='killed': jobargs['active']=False
-                            else: del jobargs['state']
-                        if job['state'] in self.JOB_ACTIVE:
-                            if 'node' in jobargs: del jobargs['node']
-                            if 'pool' in jobargs: del jobargs['pool']
+                        if 'state' in jobargs and jobargs['state'] != 'killed':
+                            del jobargs['state']
+                        if 'node' in jobargs: del jobargs['node']
+                        if 'pool' in jobargs: del jobargs['pool']
                 else: #this is a new job
                     if not jobargs.get('pool'): return False #jobs have to have a pool to run in
                     job={  
