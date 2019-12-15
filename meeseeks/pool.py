@@ -69,7 +69,7 @@ class Pool(threading.Thread):
             self.__tasks[jid].kill()
             self.__tasks[jid].join()
         except Exception as e: self.logger.warning(e,exc_info=True)
-        self.state.update_job(jid,state='killed',**self.__tasks[jid].info)
+        self.state.update_job(jid,state='killed',killed=True,**self.__tasks[jid].info)
 
     def check_job(self,jid,job):
         state=job['state']
