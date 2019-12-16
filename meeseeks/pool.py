@@ -120,6 +120,8 @@ class Pool(threading.Thread):
                     elif (job['state'] == 'running'): #job is supposed be running but isn't?
                         self.logger.warning('job %s in state running but no task'%jid)
                         self.update_job( jid, state='failed', error='crashed' )
+                    elif job['state'] == 'killed' and job.get('active'): #reset killed to set active=False
+                        self.update_job(jid,state='killed')
                     #update queued/running jobs
                     if (job['state'] == 'running' or job['state'] == 'waiting') \
                         and (time.time()-job['ts'] > self.update):

@@ -212,12 +212,13 @@ class State(threading.Thread):
     def kill_jobs(self,*args,**kwargs):
         '''kill jobs, args can be a job id, a list of jobids, or a query dict'''
         resp={}
-        if kwargs: arg=kwargs
-        elif args: arg=args[0]
-        if type(arg) is list: jids=arg
-        elif type(arg) is dict: jids=self.list_jobs(**arg)
-        else: jids=args #single job id or list of ids
-        for jid in jids: resp[jid]=self.update_job(jid,state='killed')
+        if args or kwargs:
+            if kwargs: arg=kwargs
+            elif args: arg=args[0]
+            if type(arg) is list: jids=arg
+            elif type(arg) is dict: jids=self.list_jobs(**arg)
+            else: jids=args #single job id or list of ids
+            for jid in jids: resp[jid]=self.update_job(jid,state='killed')
         return resp
         
     def list_jobs(self,**kwargs):
