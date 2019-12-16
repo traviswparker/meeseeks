@@ -155,11 +155,14 @@ class State(threading.Thread):
             try: 
                 #turn single job id into list
                 if ids and type(ids) is not list: ids=[ids]
-                #filter by jid list and ts/seq greater than
+                #filter by jid list and/or ts/seq greater than
+                #do not return jobs without node unless node query
+                # (prevents propagation of unrouted jobs)
                 r=dict( (jid,job.copy()) for (jid,job) in self.__jobs.items() if \
                         (not ids or jid in ids) \
                         and (not ts or job['ts']>ts) \
-                        and (not seq or job['seq']>seq) )
+                        and (not seq or job['seq']>seq) \
+                        and (job['node'] or 'node' in query) ) 
                 for (k,v) in query.items(): #filter by arbitrary criteria
                     r=dict((jid,job) for (jid,job) in r.items() if job.get(k)==v)
                 return r
@@ -174,7 +177,6 @@ class State(threading.Thread):
             try:
                 for jid,job in jobs.items():
                     if jid not in self.__jobs or self.__jobs[jid]['ts'] < job['ts']:
-                        if not job.get('node'): job['node']=self.node #may not be set from client
                         self.__update_job(jid,**job)
                         updated.append(jid)
                 #update our status from incoming status data
@@ -212,9 +214,10 @@ class State(threading.Thread):
     def kill_jobs(self,*args,**kwargs):
         '''kill jobs, args can be a job id, a list of jobids, or a query dict'''
         resp={}
-        if args or kwargs:
-            if kwargs: arg=kwargs
-            elif args: arg=args[0]
+        arg=None
+        if kwargs: arg=kwargs
+        elif args: arg=args[0]
+        if arg: #don't let kill run without an arg
             if type(arg) is list: jids=arg
             elif type(arg) is dict: jids=self.list_jobs(**arg)
             else: jids=args #single job id or list of ids
@@ -240,8 +243,11 @@ class State(threading.Thread):
                     #do sanity checks on state changes
                     #inactive jobs can only restarted
                     if job['state'] in self.JOB_INACTIVE:
-                        if 'state' in jobargs and jobargs['state']!='new': 
-                            del jobargs['state'] #not allowed
+                        if 'state' in jobargs:
+                            if jobargs['state']=='new': 
+                                #if no node specified, routing logic will set one
+                                if 'node' not in jobargs: jobargs['node']=False
+                            else: del jobargs['state'] #not allowed
                     #active jobs can only be killed, and cannot be moved
                     else:
                         if 'state' in jobargs and jobargs['state'] != 'killed':
@@ -252,13 +258,14 @@ class State(threading.Thread):
                     if not jobargs.get('pool'): return False #jobs have to have a pool to run in
                     job={  
                             'submit_ts':time.time(),    #submit timestamp
+                            'node':False,               #no node assigned unless jobargs set one
                             'nodelist':[],              #list of nodes to handle this job
                             'state':'new',
                             'start_count':0,             
                             'fail_count':0
                         }
                 job.update(**jobargs)
-                if not job.get('node'): job['node']=self.node #set job to be handled/routed by this node
+                #if not job.get('node'): job['node']=self.node #set job to be handled/routed by this node
                 self.__update_job(jid,**job)
                 return jid
             except Exception as e: self.logger.warning(e,exc_info=True)
@@ -276,7 +283,12 @@ class State(threading.Thread):
                         if job['seq'] > self.__hist_seq and job['state'] in self.JOB_INACTIVE:
                             self.write_history(jid)
                     self.__hist_seq=self.__seq
-                    #scan jobs
+                    #scan for jobs that need a node
+                    for jid,job in self.__jobs.items():
+                        if job['state'] == 'new' and time.time()-job['ts'] > self.timeout:
+                            self.logger.debug('job %s still in state new'%jid)
+                            self.__update_job(jid) #touch the job to resend it downstream
+                    #scan for expired jobs
                     for jid,job in self.__jobs.copy().items():
                         if time.time()-job['ts'] > self.expire: 
                             #jobs that have ended will no longer be updated, so expire them.
@@ -292,11 +304,7 @@ class State(threading.Thread):
                                     # try kicking it back to the first node for rescheduling
                                     self.__update_job(jid,node=job['nodelist'][0]) 
                                 #set job to failed, it might restart if it can
-                                self.__update_job(state='failed',error='expired')
-                            else:
-                                #this is a new job that didn't route, so bump it to retry
-                                self.logger.debug('job %s stuck in state new'%jid)
-                                self.__update_job(jid)
+                                self.__update_job(jid,state='failed',error='expired')
                     #set nodes that have not sent status to offline
                     for node,node_status in self.__node_status.copy().items():
                         if time.time()-node_status.get('ts',0) > self.timeout:

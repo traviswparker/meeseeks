@@ -90,8 +90,9 @@ class Box:
         #stop/init nodes
         nodes=self.cfg.get('nodes',{})
         for n in self.nodes.copy(): 
-            if n not in nodes: self.stop_node(n)
+            if n!=self.name and n not in nodes: self.stop_node(n)
         for n in nodes.keys():
+            if n==self.name: continue #we don't need to talk to ourself 
             ncfg=self.defaults.copy()
             ncfg.update(nodes[n])
             if n not in self.nodes:
@@ -187,42 +188,47 @@ class Box:
 
                 #job routing logic
                 try:
-                    #get jobs assigned to us
-                    for jid,job in self.state.get(node=self.name).items():
-                        pool=job['pool']
-                        #special pool for pushing remote config
-                        if pool == '__config':
-                            if job['state'] == 'new':
-                                self.logger.debug('got new __config job %s: %s'%(jid,job))
-                                if job['args']: #if changes were pushed
-                                    self.cfg.update(job['args'])
-                                    self.state.update_job(jid,args=self.cfg,state='done')
-                                    self.restart.set() #main loop breaks and apply_config is called
-                        #if we can service this job, the pool thread will claim the job so do nothing
-                        elif pool not in self.pools: 
-                            try:
-                                #we need to select a node that has the job's pool
-                                nodes=list(node for node,slots in self.state.get_pool_status().get(pool,{}).items() \
+                    #get config jobs assigned to us
+                    for jid,job in self.state.get(node=self.name,pool='__config').items():
+                        if job['state'] == 'new':
+                            self.logger.debug('got __config job %s: %s'%(jid,job))
+                            if job['args']: #if changes were pushed
+                                self.cfg.update(job['args'])
+                                self.restart.set() #main loop breaks and apply_config is called
+                            #return current config in args
+                            self.state.update_job(jid,args=self.cfg,state='done')
+
+                    #get jobs without node assigned, or assigned to us but to a pool we don't have
+                    #these need to be assigned to a node that can service them
+                    jobs=dict( (jid,job) for (jid,job) in self.state.get(node=self.name).items() \
+                        if job['pool'] not in self.pools.keys() )
+                    jobs.update(self.state.get(node=False))
+                    for jid,job in jobs.items():
+                        try:
+                            pool=job['pool']
+                            #we need to select a node that has the job's pool
+                            nodes=list(node for node,slots \
+                                in self.state.get_pool_status().get(pool,{}).items() \
                                     if slots is not False)
-                                if not nodes: continue #we can't do anything with this job
+                            if not nodes: continue #we can't do anything with this job
 
-                                #filter by the job's nodelist if set
-                                if job['nodelist']: 
-                                    in_list_nodes=[node for node in nodes if node in job['nodelist']]
-                                    #if we got a result, use it
-                                    #we may not if the nodelist only controlled the upstream routing
-                                    #so if we got nothing based on the node list use all pool nodes
-                                    if in_list_nodes: nodes=in_list_nodes
+                            #filter by the job's nodelist if set
+                            if job['nodelist']: 
+                                in_list_nodes=[node for node in nodes if node in job['nodelist']]
+                                #if we got a result, use it
+                                #we may not if the nodelist only controlled the upstream routing
+                                #so if we got nothing based on the node list use all pool nodes
+                                if in_list_nodes: nodes=in_list_nodes
 
-                                #select a node the job
-                                if self.defaults.get('use_loadavg'): node=self.select_by_loadavg(nodes)
-                                else: node=self.select_by_available(pool,nodes)
+                            #select a node for the job
+                            if self.defaults.get('use_loadavg'): node=self.select_by_loadavg(nodes)
+                            else: node=self.select_by_available(pool,nodes)
 
-                                #route the job
-                                self.logger.debug('routing %s for %s to %s'%(jid,pool,node))
-                                self.state.update_job(jid,node=node)
-                                
-                            except Exception as e: self.logger.warning(e,exc_info=True)
+                            #route the job
+                            self.logger.info('routing %s for %s to %s'%(jid,pool,node))
+                            self.state.update_job(jid,node=node)
+                            
+                        except Exception as e: self.logger.warning(e,exc_info=True)
                     
                     time.sleep(1)
 
