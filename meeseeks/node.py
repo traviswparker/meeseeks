@@ -69,7 +69,8 @@ class Node(threading.Thread):
     def __node_run(self):
         while not self.shutdown.is_set():
             if not self.__socket: #reset sync on disconnect
-                poll=local_seq=remote_seq=0 
+                local_seq=remote_seq=0
+                poll=-1
             
             #we sync updates for all nodes that are routed through the remote node
             #if self.node is None, we are are a client and always send updates

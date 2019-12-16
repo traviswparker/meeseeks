@@ -177,10 +177,13 @@ failed: job failed. rc will be set, or error will be set. If the job expired, no
             filter for get/ls:
                 node= pool= state= (query filters for jobs)
 
-        kill <jobid> [,jobid...]
+        kill <jobid,jobid,...|filter> (kill jobs)
 
-        show [filter] {nodes pools jobs active} 
-            (prints a cluster status tree, specify which elements to show, defaults to all)
+        restart <jobid,jobid,...|filter> (restart inactive jobs or kill/restart active jobs)
+
+        show [filter] {nodes pools jobs active tree} 
+            (prints a foat or tree of cluster status, 
+             specify which elements to show, defaults to flat/all)
 
         nodes (prints full node status JSON)
 

@@ -29,10 +29,13 @@ def usage():
             filter for get/ls:
                 node= pool= state= (query filters for jobs)
 
-        kill <jobid> [,jobid...]
+        kill <jobid|filter> [,jobid...] (kill job)
+
+        restart <jobid|filter> [,jobid...] (restart job)
 
         show [filter] {nodes pools jobs active tree} 
-            (prints a cluster status, specify which elements to show, defaults to all)
+            (prints a foat or tree of cluster status, 
+             specify which elements to show, defaults to flat/all)
 
         nodes (prints full node status JSON)
 
@@ -147,8 +150,18 @@ try:
             elif args:
                 for arg in args: pretty_print({arg:client.query(arg)})
             else: pretty_print(client.query(**kwargs))
-        elif cmd == 'kill': pretty_print(client.kill(args,**kwargs))
         elif cmd == 'ls': pretty_print(client.ls(**kwargs))
+        elif cmd == 'kill': pretty_print(client.kill(args,**kwargs))
+        elif cmd == 'restart': #reset inactive jobs to reschedule them
+            #to reset active jobs we have to kill them and wait for active=False
+            jids=list(jid for (jid,job) in client.kill(args,**kwargs).items() if job)
+            while jids: #while we have remaining jobs
+                #restart jobs that are now inactive
+                for jid in list(jid for (jid,job) in client.query(ids=jids).items() if not job.get('active')):
+                    client.submit(id=jid,state='new') #submit to existing and change state to new, this resets job
+                    pretty_print(client.query(jid))
+                    jids.remove(jid) #remove from list
+                if jids: time.sleep(cfg.get('refresh',1)) #if some jobs are still active, wait and try again
         elif cmd == 'nodes': 
             if cfg.get('refresh'): 
                 while True:
