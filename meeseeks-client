@@ -35,7 +35,7 @@ def usage():
 
         kill <jobids | filter> (kill job)
 
-        restart <jobids | filter> (restart job)
+        reset <jobids | filter> (restart job)
 
         show [filter] {nodes pools jobs active tree} 
             (prints a foat or tree of cluster status, 
@@ -168,7 +168,7 @@ try:
 
         elif cmd == 'kill': pretty_print(client.kill(args,**kwargs))
 
-        elif cmd == 'restart': #reset inactive jobs to reschedule them
+        elif cmd == 'reset': #reset jobs
             #to reset active jobs we have to kill them and wait for active=False
             jids=list(jid for (jid,job) in client.kill(args,**kwargs).items() if job)
             while jids: #while we have remaining jobs

@@ -79,9 +79,8 @@ The config sections, objects, and defaults are as follows:
         } , ... }
 
         use_loadavg:  #if set true, load average will be used to select nodes  vs. free pool slots
-        wait_in_pool: #if set true, jobs will be assigned to nodes with full pools. 
-                      # Job will be in state 'waiting' and run when slot is free
-                      #if false (default) jobs will remain unassigned in state 'new' until a slot is free
+        wait_in_pool: #if set true, jobs will be assigned to nodes with full pools and run when a slot is free
+                      #if false (default) jobs will remain unassigned until a slot is free
     }
 
 config can also be provided on the command line using key.key.key=value
@@ -152,17 +151,18 @@ Each node periodically pulls node and pool slot availability from connected node
 
 # job state values
 
-new: submitted job, not yet claimed by a pool.
-
-waiting: job is waiting to run in the pool. node is set to the node the job will run on.
+new: job has been submitted but not started. May be assigned to a node's pool if wait_in_pool is set.
+     if claimed by a pool, node will be set and active=True
 
 running: job is running. pid will be set. node is set to the node the job is running on.
 
-done: job is finished. stdout and stderr will contain output
+done: job is finished. stdout_data and stderr_data will contain output
 
-failed: job failed. rc will be set, or error will be set. If the job expired, node may be set back to the submit node.
+failed: job failed. rc will be set, or error will be set. 
+        If the job expired and retries are set, node may cleared
 
-killed: job was killed, rc may be set to if job was running
+killed: job was killed, rc may be set if job was running. 
+        if acknowledged and released by node, active=False
 
 # meeseeks-client
 
@@ -180,14 +180,18 @@ killed: job was killed, rc may be set to if job was running
                 state= (change existing job state, 'new' will restart finished job)
                 hold= (1=queue but do not start job)
 
-        get [jobid,jobid... | filter] (get all or specified job info as JSON)
+        get [jobids | filter] (get all or specified job info as JSON)
+            jobids are any number of job id arguments
+            filter is any job attributes such as node= pool= state=
+
         ls [filter] (list job ids)
-            filter for get/ls:
-                node= pool= state= (query filters for jobs)
 
-        kill <jobid,jobid,...|filter> (kill jobs)
+        set <jobids | filter :> key=value ... (set key=value in jobs matching jobids or filter)
+            if a filter is provided, : is used to delimit filter key=value from set key=value
 
-        restart <jobid,jobid,...|filter> (restart inactive jobs or kill/restart active jobs)
+        kill <jobids | filter> (kill job)
+
+        reset <jobids | filter> (restart finished job, reassign new job, or kill/restart running job)
 
         show [filter] {nodes pools jobs active tree} 
             (prints a foat or tree of cluster status, 

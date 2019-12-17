@@ -25,7 +25,7 @@ class State(threading.Thread):
 
         job attributes:
             node: the node the job is assigned to
-            state: the job state (new,waiting,running,done,failed,killed)
+            state: the job state (new,running,done,failed,killed)
             active: True if the job is being processed by a node.
                     To move a job: kill the job, wait for active=False, then reassign and set state='new'.
             rc: exit code if job done/failed
@@ -60,9 +60,6 @@ class State(threading.Thread):
 
     #states of inactive jobs
     JOB_INACTIVE=['done','failed','killed']
-
-    #states of active job in a pool. 'new' is not included here.
-    JOB_ACTIVE=['waiting','running']
 
     def __init__(self,__node=None,**cfg):
         self.node=__node
@@ -298,15 +295,13 @@ class State(threading.Thread):
                             if job['state'] in self.JOB_INACTIVE:
                                 self.logger.debug('expiring inactive job %s'%jid)
                                 del self.__jobs[jid]
-                            #if we expire waiting/running jobs
-                            elif self.expire_active_jobs and job['state'] in self.JOB_ACTIVE: 
+                            #if we expire active jobs
+                            elif self.expire_active_jobs and job.get('active'): 
                                 #this job *should* have been updated
                                 self.logger.warning('active job %s not updated in %s seconds'%(jid,self.expire))
-                                #if we restart on fail and have a nodelist
-                                if job.get('retries') and job['nodelist']:
-                                    # try kicking it back to the first node for rescheduling
-                                    self.__update_job(jid,node=job['nodelist'][0]) 
-                                #set job to failed, it might restart if it can
+                                #if we restart on fail, reset the job
+                                if job.get('retries'): self.__update_job(jid,active=False,node=False) 
+                                #set job to failed, it will restart if it can
                                 self.__update_job(jid,state='failed',error='expired')
                     #set nodes that have not sent status to offline
                     for node,node_status in self.__node_status.copy().items():

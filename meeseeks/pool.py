@@ -40,7 +40,7 @@ class Pool(threading.Thread):
         self.start()
 
     def config(self,update=30,slots=None,runtime=None,**cfg):
-        if update: self.update=int(update) #how often we update the state of running/waiting jobs
+        if update: self.update=int(update) #how often we update the state of running jobs
         if runtime: self.max_runtime=int(runtime)
         else: self.max_runtime=None
         if slots is not None: #number of job slots (>0:set slots, 0:not defined, <0 drains pool)
@@ -124,17 +124,14 @@ class Pool(threading.Thread):
                     elif job['state'] == 'killed' and job.get('active'): #reset killed to set active=False
                         self.update_job(jid,state='killed')
                     #update queued/running jobs
-                    if (job['state'] == 'running' or job['state'] == 'waiting') \
-                        and (time.time()-job['ts'] > self.update):
+                    if job['state'] == 'running' and (time.time()-job['ts'] > self.update):
                             self.update_job(jid,**task_info) #touch it so it doesn't expire
                     #check to see if we can start a job
-                    elif job['state'] == 'new' or job['state'] == 'waiting' \
+                    elif job['state'] == 'new' \
                         or (job['state'] == 'done' and job.get('restart')) \
                         or (job['state'] == 'failed' and job.get('fail_count') < int(job.get('retries',0)) ):
                             if not job.get('hold') and (not self.slots or (len(self.__tasks) < self.slots)):
                                  self.start_job(jid)
-                            #job is waiting for a slot
-                            elif job['state'] != 'waiting': self.update_job(jid,state='waiting')
                 #check for orphaned tasks. This shouldn't happen but it can if time jumps.
                 for jid in list(self.__tasks.keys()):
                     if jid not in pool_jobs:
