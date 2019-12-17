@@ -24,14 +24,18 @@ def usage():
                 state= (change existing job state, 'new' will restart finished job)
                 hold= (1=queue but do not start job)
 
-        get [jobid,jobid... | filter] (get all or specified job info as JSON)
+        get [jobids | filter] (get all or specified job info as JSON)
+            jobids are any number of job id arguments
+            filter is any job attributes such as node= pool= state=
+
         ls [filter] (list job ids)
-            filter for get/ls:
-                node= pool= state= (query filters for jobs)
 
-        kill <jobid|filter> [,jobid...] (kill job)
+        set <jobids | filter :> key=value ... (set key=value in jobs matching jobids or filter)
+            if a filter is provided, : is used to delimit filter key=value from set key=value
 
-        restart <jobid|filter> [,jobid...] (restart job)
+        kill <jobids | filter> (kill job)
+
+        restart <jobids | filter> (restart job)
 
         show [filter] {nodes pools jobs active tree} 
             (prints a foat or tree of cluster status, 
@@ -130,6 +134,7 @@ try:
     #if we will be refreshing, refresh now until state populated
     if cfg.get('refresh'):
         while not client.get_node_status(): time.sleep(1)
+
     if cmd == 'submit':
         #get pool, args and optional node selection
         pool=jobargs=node=None
@@ -141,17 +146,28 @@ try:
         if cfg.get('refresh'): jids=[client.submit_job(pool=pool,args=jobargs,node=node,**cfg)]
         #submit directly and return jid
         else: print(client.submit(pool=pool,args=jobargs,node=node,**cfg))
-    else: #if not submit, parse as query args and job ids
+
+    else: #if not submit, parse as key=value args and job ids
         kwargs,args=cmdline_parser(args)
-        if cmd == 'get':
+        if cmd == 'get': #get jobs by ids or filter on key=value
             if cfg.get('refresh'):
                 if args: jids=args
                 else: jids=True #get all
-            elif args:
-                for arg in args: pretty_print({arg:client.query(arg)})
+            elif args: pretty_print(client.query(ids=args))
             else: pretty_print(client.query(**kwargs))
+
+        elif cmd == 'set': #set k=v in matching jobs
+            #kwargs will be set if we have initial k=v args like 'pool=... : key=...' 
+            if kwargs: jids=client.ls(**kwargs) #we were provided a filter
+            else: jids=[arg for arg in args if '=' not in arg] #no filter, we have 'jobid jobid key=...'
+            kwargs,args=cmdline_parser([arg for arg in args if '=' in arg]) #parse following k=v args
+            for jid in jids: client.submit(id=jid,**kwargs) #submit changes 
+            if jids: pretty_print(client.query(ids=jids)) #print changes 
+
         elif cmd == 'ls': pretty_print(client.ls(**kwargs))
+
         elif cmd == 'kill': pretty_print(client.kill(args,**kwargs))
+
         elif cmd == 'restart': #reset inactive jobs to reschedule them
             #to reset active jobs we have to kill them and wait for active=False
             jids=list(jid for (jid,job) in client.kill(args,**kwargs).items() if job)
@@ -161,31 +177,38 @@ try:
                     client.submit(id=jid,state='new') #submit to existing and change state to new, this resets job
                     pretty_print(client.query(jid))
                     jids.remove(jid) #remove from list
-                if jids: time.sleep(cfg.get('refresh',1)) #if some jobs are still active, wait and try again
+                if jids:
+                    #refetch to clean up dead jobs
+                    jids=list(jid for (jid,job) in client.get(jids).items() if job)
+                    time.sleep(cfg.get('refresh',1)) #if some jobs are still active, wait and try again
+
         elif cmd == 'nodes': 
             if cfg.get('refresh'): 
                 while True:
                     pretty_print(client.get_node_status())
                     time.sleep(cfg.get('refresh'))
             else: pretty_print(client.status()['nodes'])
+
         elif cmd == 'pools': 
             if cfg.get('refresh'): 
                 while True:
                     pretty_print(client.get_pool_status())
                     time.sleep(cfg.get('refresh'))
             else: pretty_print(client.status()['pools'])
+
         elif cmd == 'config': 
             if 'file' in kwargs: kwargs.update(read_cfg_files(kwargs['file']))
             if args:
                 for node in args: 
                     print(client.submit(pool='__config',node=node,args=kwargs))
             else: pretty_print(client.request(dict(config=kwargs))) #peer config push
+
         elif cmd == 'show': show(client.status(),args,**kwargs) #pretty print full cluster
 
         else: sys.exit(usage())
     
     #refreshing on jobs
-    if jids:
+    if jids and cfg.get('refresh'):
         seq={} #sequence numbers for printing updates
         while True: 
             if jids is True: jobs=client.get(**kwargs)

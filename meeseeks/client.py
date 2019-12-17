@@ -41,16 +41,33 @@ class Client(State):
                         **cfg)
 
     #direct request methods
+    
+    # submit new job or changes to existing job
+    # if existing job is specified with id=... job will be modified
     def submit(self,**kwargs): return self.__node.request([{'submit':kwargs}])[0]['submit']
+
+    #query/kill jobs
+    # specify single jid to get single job dict back
+    # specify kwargs to filter on key=value
+    # special keys are: 
+    #  ids=[list of job ids], 
+    #  ts=(returns jobs with ts >= ts), 
+    #  seq=(returns jobs with seq >= seq)
     def query(self,jid=None,**kwargs): 
         if jid: return self.__node.request([{'job':jid}])[0]['job']
         else: return self.__node.request([{'get':kwargs}])[0]['get']
     def kill(self,jid=None,**kwargs): 
         if jid: return self.__node.request([{'kill':jid}])[0]['kill']
         else: return self.__node.request([{'kill':kwargs}])[0]['kill']
+
+    #return list of job ids for jobs matching kwargs criteria
     def ls(self,**kwargs): return self.__node.request([{'ls':kwargs}])[0]['ls']
+    
+    #get node and pool status, kwargs are sent but ignored (for now)
     def status(self,**kwargs): return self.__node.request([{'status':kwargs}])[0]['status']
-    def request(self,req): return self.__node.request([req])[0] #for sending raw request
+    
+    #for sending raw requests
+    def request(self,req): return self.__node.request([req])[0]
     
     def close(self): 
         #stop the node and state threads

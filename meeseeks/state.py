@@ -239,7 +239,8 @@ class State(threading.Thread):
                 jid=jobargs.get('id',str(uuid.uuid1())) #use preset id or generate one
                 job=self.__jobs.get(jid)
                 if job: #modifying an existing job
-                    del jobargs['id']
+                    del jobargs['id'] #unset incoming id
+                    del job['ts'] #unset ts to ensure update 
                     #do sanity checks on state changes
                     #inactive jobs can only restarted
                     if job['state'] in self.JOB_INACTIVE:
