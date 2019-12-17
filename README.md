@@ -69,7 +69,10 @@ The config sections, objects, and defaults are as follows:
 
     pools: list of job processing pools
         { <poolname>:{
-            slots: null # if set, limit of how many jobs can run simultaneously
+            slots: null 
+                # if > 0 sets limit of how many jobs can run simultaneously
+                # 0 sets no limit
+                # -1 drains pool (no new jobs will be assigned)
             max_runtime: null # if set, limit of how long a job can run for
             update: 30 # how often in seconds the state of running jobs is updated to prevent expiration
             plugin: <path.module.Class> to provide this pool instance
@@ -99,23 +102,22 @@ example:
         { 
           "nodes": { nodename:{ ts:..., online:true|false, loadavg:....}, .... },
           "pools": { poolname:{ nodename:slots_available|null, ... }, .... } 
-    } 
+      } 
 
       "submit" :{ 
-            "id": string , #job id, optional, MUST be unique. A UUID will be generated if id is omitted
-                           #if an existing job id is given, the job will be modified if possible
-            "pool": string , #pool name, REQUIRED.
-            "args": [executable, arg, arg, arg] , #The command to run and arguments. If subprocess.Popen likes it, it will work.
-            "node": node #optional. Strict node selection. Job will fail if node unavailable.
-            "nodelist": [nodename, ... ], #optional. A list of preferred nodes to use. See Job Routing. 
-        
-        "stdin": path, #path to file to use for the job's stdin
-        "stdout": path, #optional, path to file to use for the job's stdout else stdout_data returns the base64 encoded output
-        "stderr": path, #optional, path to file to use for the job's stderr else stderr_data returns the base64 encoded output
-        "runtime: int,  #optional, maximum runtime of the job
-        "hold": false|true, #optional, if true job will be assigned to a node but not run until set false
-        "restart": false|true,    #if true, job will be restarted on the same node if it exits with success (rc == 0)
-        "retries": int,           #if >0, job will be restarted a max of retrues on the same node if it exits with failure (rc != 0)
+        "id": string  #job id, optional, MUST be unique. A UUID will be generated if id is omitted
+                        #if an existing job id is given, the job will be modified if possible
+        "pool": string #pool name, REQUIRED.
+        "args": [executable, arg, arg, arg] #The command to run and arguments. If subprocess.Popen likes it, it will work.
+        "node": node #optional. Strict node selection. Job will fail if node unavailable.
+        "filter": string #optional. Filter node selection to names containing this pattern.
+        "stdin": path #path to file to use for the job's stdin
+        "stdout": path #optional, path to file to use for the job's stdout else stdout_data returns the base64 encoded output
+        "stderr": path #optional, path to file to use for the job's stderr else stderr_data returns the base64 encoded output
+        "runtime: int  #optional, maximum runtime of the job
+        "hold": false|true #optional, if true job will be assigned to a node but not run until set false
+        "restart": false|true    #if true, job will be restarted on the same node if it exits with success (rc == 0)
+        "retries": int,          #if >0, job will be restarted a max of retrues on the same node if it exits with failure (rc != 0)
                                       # if a node fails, the jobs running on it will not be updated and will expire
                                       # these jobs will be failed. If resries is set they will be retried.
                                       # if a nodelist is provided, the job will be reassigned to the first node in the list
@@ -145,16 +147,17 @@ Each node periodically pulls node and pool slot availability from connected node
 
 # job state values
 
-new: submitted job, not yet claimed by a pool. node may be set to the the submit node, pool node, or any intermediate node.
+new: submitted job, not yet claimed by a pool.
 
-waiting: job is waiting to run in the pool. node is set to the node the job will run on
+waiting: job is waiting to run in the pool. node is set to the node the job will run on.
 
-running: job is running. pid will be set. node is set to the node the job is running on
+running: job is running. pid will be set. node is set to the node the job is running on.
 
 done: job is finished. stdout and stderr will contain output
 
 failed: job failed. rc will be set, or error will be set. If the job expired, node may be set back to the submit node.
 
+killed: job was killed, rc may be set to if job was running
 
 # meeseeks-client
 

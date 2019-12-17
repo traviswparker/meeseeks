@@ -13,7 +13,7 @@ class State(threading.Thread):
             pool: <required> the pool the job runs in
             args: <required> list of [ arg0 (executable) [,arg1,arg2,...] ] (command line for job)
             node: [optional] node to run on, job will fail if unavailable
-            nodelist: [optional] list of nodes to prefer, to set downstream routing
+            filter: [optional] pattern to match nodename against, to set preferred nodes
             stdin: filename to redirect stdin from
             stdout: filename to redirect stdout to
             stderr: filename to redirect stderr to
@@ -48,7 +48,7 @@ class State(threading.Thread):
                 'args',
                 'state',
                 'node',
-                'nodelist',
+                'filter',
                 'stdin',
                 'stderr',
                 'stdout',
@@ -133,9 +133,9 @@ class State(threading.Thread):
     def update_pool_status(self,pool,node,slots): 
         '''set slots on node in pool'''
         with self.__lock: self.__update_pool_status(pool,node,slots)
-    def __update_pool_status(self,pool,node,slots):
+    def __update_pool_status(self,pool,node,slots=None):
         self.__pool_status.setdefault(pool,{})[node]=slots
-        if slots is False: self.__pool_ts=time.time() #reset expiration on remove
+        if slots is None: self.__pool_ts=time.time() #reset expiration on remove
 
     def update_node_status(self,node,**node_status): 
         '''set node status, remove node from pool if node offline'''
@@ -146,8 +146,8 @@ class State(threading.Thread):
         if not node_status.get('online'):
             for pool in self.__pool_status.keys():
                 if node in self.__pool_status[pool] \
-                    and self.__pool_status[pool][node] is not False:
-                        self.__update_pool_status(pool,node,False)
+                    and self.__pool_status[pool][node] is not None:
+                        self.__update_pool_status(pool,node,None)
 
     def get(self,ids=None,ts=None,seq=None,**query):
         '''dump a list of jobs or all jobs for a node/pool/state/or updated after a certain ts/seq'''
@@ -259,7 +259,6 @@ class State(threading.Thread):
                     job={  
                             'submit_ts':time.time(),    #submit timestamp
                             'node':False,               #no node assigned unless jobargs set one
-                            'nodelist':[],              #list of nodes to handle this job
                             'state':'new',
                             'start_count':0,             
                             'fail_count':0
@@ -318,7 +317,7 @@ class State(threading.Thread):
                     if time.time()-self.__pool_ts > self.timeout:
                         for pool,nodes in self.__pool_status.copy().items():
                             for node,slots in nodes.copy().items():
-                                if slots is False: 
+                                if slots is None: 
                                     self.logger.info('removing node %s from pool %s'%(node,pool))
                                     del self.__pool_status[pool][node]
                             if not self.__pool_status[pool]:

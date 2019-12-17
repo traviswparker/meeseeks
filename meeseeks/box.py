@@ -144,10 +144,9 @@ class Box:
     
     def select_by_available(self,pool,nodes):
         #get nodes in this pool sorted from most to least open slots
-        #exclude nodes in pool with no slots unless we have no free slots
+        #exclude nodes in pool with no free slots unless we have no free slots
         pool_status=self.state.get_pool_status()
-        nodes_slots=[ (pool_status[pool][node], node) for node in nodes \
-            if pool_status[pool][node] and pool_status[pool][node] is not True ]
+        nodes_slots=[ (pool_status[pool][node], node) for node in nodes if pool_status[pool][node] ]
         #do we have any nodes with pool slots?
         if nodes_slots: 
             s,node=self.biased_random(nodes_slots,reverse=True)
@@ -206,19 +205,18 @@ class Box:
                     for jid,job in jobs.items():
                         try:
                             pool=job['pool']
-                            #we need to select a node that has the job's pool
+                            #we need to select a node:
+                            # not marked for removal (slots=False)
+                            # not set to drain (slots<0)
                             nodes=list(node for node,slots \
                                 in self.state.get_pool_status().get(pool,{}).items() \
-                                    if slots is not False)
-                            if not nodes: continue #we can't do anything with this job
+                                    if slots is not None and slots >= 0 )
 
-                            #filter by the job's nodelist if set
-                            if job['nodelist']: 
-                                in_list_nodes=[node for node in nodes if node in job['nodelist']]
-                                #if we got a result, use it
-                                #we may not if the nodelist only controlled the upstream routing
-                                #so if we got nothing based on the node list use all pool nodes
-                                if in_list_nodes: nodes=in_list_nodes
+                            #filter nodes if set
+                            if job.get('filter'): 
+                                nodes=[node for node in nodes if job['filter'] in node]
+
+                            if not nodes: continue #we can't do anything with this job
 
                             #select a node for the job
                             if self.defaults.get('use_loadavg'): node=self.select_by_loadavg(nodes)
