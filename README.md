@@ -67,16 +67,21 @@ The config sections, objects, and defaults are as follows:
             timeout: 10 # timeout in seconds to connect/send/receive data
         } , ... }
 
-    pools: list of job processing pools
+    pools: list of job processing pools on this node
         { <poolname>:{
-            slots: null 
+            slots: 0 
                 # if > 0 sets limit of how many jobs can run simultaneously
-                # 0 sets no limit
+                # 0 sets no limit, but nodes with free slots will be preferred
                 # -1 drains pool (no new jobs will be assigned)
             max_runtime: null # if set, limit of how long a job can run for
             update: 30 # how often in seconds the state of running jobs is updated to prevent expiration
             plugin: <path.module.Class> to provide this pool instance
         } , ... }
+
+        use_loadavg:  #if set true, load average will be used to select nodes  vs. free pool slots
+        wait_in_pool: #if set true, jobs will be assigned to nodes with full pools. 
+                      # Job will be in state 'waiting' and run when slot is free
+                      #if false (default) jobs will remain unassigned in state 'new' until a slot is free
     }
 
 config can also be provided on the command line using key.key.key=value

@@ -57,7 +57,8 @@ def usage():
 
 def pretty_print(d): print (json.dumps(d, sort_keys=True, indent=4))
 
-def show(status,args,**kwargs):      
+def show(client,args,**kwargs):     
+    status=client.status() 
     nodes=status.get('nodes',{})
     pools=status.get('pools',{})
     kwpool=kwargs.get('pool')
@@ -72,10 +73,9 @@ def show(status,args,**kwargs):
         for p,pnodes in pools.items():
             if kwpool and p != kwpool: continue
             if n in pnodes: node.setdefault('free',{})[p]=pnodes[n]
-            jobs=client.get(pool=p,node=n,**kwargs)
-            if jobs: node.setdefault('jobs',{})[p]=jobs
+        jobs=client.query(node=n,**kwargs)
+        for jid,job in jobs.items(): node.setdefault('jobs',{}).setdefault(job['pool'],{})[jid]=job
     #now we put nodes under other nodes
-    s=nodes
     def _tree(s):
         for n in list(s.keys()):
             if n in s: #already moved?
@@ -86,7 +86,7 @@ def show(status,args,**kwargs):
                         s[n].setdefault('next',{})[dn]=s[dn]
                         del s[dn]
                 if s[n].get('next'): _tree(s[n]['next']) #walk downstream
-    if 'tree' in args: _tree(s)
+    if 'tree' in args: _tree(nodes)
     #now we print the tree
     def _print(s,i=0):
         for n,node in sorted(s.items()):
@@ -95,7 +95,7 @@ def show(status,args,**kwargs):
                 if node.get('online'): l+='online'
                 else: l+='offline'
                 l+='\t%s'%node.get('loadavg')
-                print(l)
+                if n: print(l)
             pn=set(node.get('free',{}).keys())|set(node.get('jobs',{}).keys())
             for p in sorted(pn):
                 if 'nodes' in args: l='\t'*i + '\t'
@@ -178,8 +178,6 @@ try:
                     pretty_print(client.query(jid))
                     jids.remove(jid) #remove from list
                 if jids:
-                    #refetch to clean up dead jobs
-                    jids=list(jid for (jid,job) in client.get(jids).items() if job)
                     time.sleep(cfg.get('refresh',1)) #if some jobs are still active, wait and try again
 
         elif cmd == 'nodes': 
@@ -203,7 +201,7 @@ try:
                     print(client.submit(pool='__config',node=node,args=kwargs))
             else: pretty_print(client.request(dict(config=kwargs))) #peer config push
 
-        elif cmd == 'show': show(client.status(),args,**kwargs) #pretty print full cluster
+        elif cmd == 'show': show(client,args,**kwargs) #pretty print full cluster
 
         else: sys.exit(usage())
     

@@ -130,12 +130,15 @@ class State(threading.Thread):
         '''get a node:status map of cluster status'''
         return self.__node_status.copy()
     
-    def update_pool_status(self,pool,node,slots): 
-        '''set slots on node in pool'''
+    def update_pool_status(self,pool,node,slots=None): 
+        '''set free slots in pool for node
+            if slots < 0 pool is being drained, will not get new jobs
+            if slots is 0 pool is full but jobs may wait if other nodes are full
+            if slots is None no slots are defined, jobs will be assigned if no other slots available
+            if slots is False node will be expired from pool'''
         with self.__lock: self.__update_pool_status(pool,node,slots)
-    def __update_pool_status(self,pool,node,slots=None):
+    def __update_pool_status(self,pool,node,slots):
         self.__pool_status.setdefault(pool,{})[node]=slots
-        if slots is None: self.__pool_ts=time.time() #reset expiration on remove
 
     def update_node_status(self,node,**node_status): 
         '''set node status, remove node from pool if node offline'''
@@ -146,8 +149,8 @@ class State(threading.Thread):
         if not node_status.get('online'):
             for pool in self.__pool_status.keys():
                 if node in self.__pool_status[pool] \
-                    and self.__pool_status[pool][node] is not None:
-                        self.__update_pool_status(pool,node,None)
+                    and self.__pool_status[pool][node] is not False:
+                        self.__update_pool_status(pool,node,False)
 
     def get(self,ids=None,ts=None,seq=None,**query):
         '''dump a list of jobs or all jobs for a node/pool/state/or updated after a certain ts/seq'''
@@ -318,7 +321,7 @@ class State(threading.Thread):
                     if time.time()-self.__pool_ts > self.timeout:
                         for pool,nodes in self.__pool_status.copy().items():
                             for node,slots in nodes.copy().items():
-                                if slots is None: 
+                                if slots is False: 
                                     self.logger.info('removing node %s from pool %s'%(node,pool))
                                     del self.__pool_status[pool][node]
                             if not self.__pool_status[pool]:

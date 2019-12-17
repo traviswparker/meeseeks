@@ -9,7 +9,7 @@ for c in 1 2 3 4 5 6 7 8 9; do
 
     for n in 1 2 3 4 5 6 7 8 9; do
 
-       ../meeseeks-box name=node${c}${n} listen.port=137${c}${n} pools.p1.slots=2 &
+       ../meeseeks-box name=node${c}${n} listen.port=137${c}${n} pools.p1.slots=1 &
 
     done
 
@@ -20,6 +20,6 @@ done
 
 sleep 10
 
-for j in {1..300}; do ../meeseeks-client id=job$j submit p1@submit sleep $j; done 
+for j in {1..300}; do ../meeseeks-client id=job$j submit p1 sleep $j; done 
 
 while true; do sleep 1; done

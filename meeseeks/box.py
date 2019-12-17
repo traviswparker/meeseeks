@@ -150,7 +150,6 @@ class Box:
         #do we have any nodes with pool slots?
         if nodes_slots: 
             s,node=self.biased_random(nodes_slots,reverse=True)
-            if s > 0: self.state.update_pool_status(pool,node,s-1) #update the local free slot count
             return node
         #if not, pick a random node from the pool
         else: return random.choice( nodes )
@@ -197,33 +196,47 @@ class Box:
                             #return current config in args
                             self.state.update_job(jid,args=self.cfg,state='done')
 
-                    #get jobs without node assigned, or assigned to us but to a pool we don't have
+                    #get jobs assigned to us but to a pool we don't have
                     #these need to be assigned to a node that can service them
                     jobs=dict( (jid,job) for (jid,job) in self.state.get(node=self.name).items() \
                         if job['pool'] not in self.pools.keys() )
+                    #add jobs without node assigned, these were just submitted and need routing
                     jobs.update(self.state.get(node=False))
                     for jid,job in jobs.items():
                         try:
                             pool=job['pool']
+                            pool_status=self.state.get_pool_status().get(pool,{})
                             #we need to select a node:
-                            # not marked for removal (slots=False)
-                            # not set to drain (slots<0)
-                            nodes=list(node for node,slots \
-                                in self.state.get_pool_status().get(pool,{}).items() \
-                                    if slots is not None and slots >= 0 )
-
+                            # not marked for removal (slots is False)
+                            # not set to drain (slots < 0)
+                            # with open slots (slots > 0)
+                            # or full (slots is 0) but jobs can wait
+                            # or without defined slots (slots is None)
+                            nodes=list(node for node,slots in pool_status.items() \
+                                if slots is not False \
+                                    and ( slots is None or slots > 0 or \
+                                        ( slots==0 and self.cfg.get('wait_in_pool') ) ) )
+                            
                             #filter nodes if set
                             if job.get('filter'): 
                                 nodes=[node for node in nodes if job['filter'] in node]
 
-                            if not nodes: continue #we can't do anything with this job
+                            if not nodes: #we can't assign this job yet so put it on this node
+                                if not job['node']: self.state.update_job(jid,node=self.name)
+                                continue 
 
                             #select a node for the job
-                            if self.defaults.get('use_loadavg'): node=self.select_by_loadavg(nodes)
+                            if self.cfg.get('use_loadavg'): node=self.select_by_loadavg(nodes)
                             else: node=self.select_by_available(pool,nodes)
 
+                            #update the local free slot count pending node sending new count
+                            slots=pool_status[node]
+                            if type(slots) is int and slots > 0: 
+                                slots-=1
+                                self.state.update_pool_status(pool,node,slots)
+
                             #route the job
-                            self.logger.info('routing %s for %s to %s'%(jid,pool,node))
+                            self.logger.info('routing %s for %s to %s (%s)'%(jid,pool,node,slots))
                             self.state.update_job(jid,node=node)
                             
                         except Exception as e: self.logger.warning(e,exc_info=True)

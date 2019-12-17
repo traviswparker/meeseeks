@@ -43,7 +43,9 @@ class Pool(threading.Thread):
         if update: self.update=int(update) #how often we update the state of running/waiting jobs
         if runtime: self.max_runtime=int(runtime)
         else: self.max_runtime=None
-        if slots is not None: self.slots=int(slots) #number of job slots (>0:set slots, 0:not defined, -1 drains pool)
+        if slots is not None: #number of job slots (>0:set slots, 0:not defined, <0 drains pool)
+            if slots==0: self.slots=None
+            else: self.slots=int(slots) 
 
     def update_job(self,jid,**data):
         '''hook for state.update_job that sets active flag'''
@@ -140,7 +142,8 @@ class Pool(threading.Thread):
                         self.kill_job(jid,None) #just kill it
                         del self.__tasks[jid] #recover the slot
                 #update pool status with free slots
-                slots_free=self.slots-len(self.__tasks)
+                if self.slots: slots_free=self.slots-len(self.__tasks)
+                else: slots_free=None #no slots defined
                 self.state.update_pool_status(self.pool,self.node,slots_free)
             except Exception as e: self.logger.error(e,exc_info=True)
             time.sleep(1)
