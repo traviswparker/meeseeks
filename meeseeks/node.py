@@ -11,7 +11,7 @@ from .util import create_ssl_context
 class Node(threading.Thread):
     '''node poller/state sync thread
     initially we try to push all state to the node (sync_ts of 0)'''
-    def __init__(self,__node,__remote_node,__state,**cfg):
+    def __init__(self,__node,__remote_node,__state,start_node=True,**cfg):
         self.node=__node #node we are running on 
         self.remote_node=__remote_node #node we connect to
         self.state=__state
@@ -23,8 +23,9 @@ class Node(threading.Thread):
         self.__lock=threading.Lock() #to ensure direct request and sync don't clobber
         self.__socket=None
         self.shutdown=threading.Event()
+        self.refresh=0
         self.config(**cfg)
-        self.start()
+        if self.refresh: self.start() #if refresh=0, do not start thread
 
     def config(self,address=None,port=13700,timeout=10,refresh=1,poll=10,**cfg):
         if address: self.address=address
@@ -32,7 +33,7 @@ class Node(threading.Thread):
         if port: self.port=int(port)
         if timeout: self.timeout=int(timeout)
         if refresh: self.refresh=int(refresh) #how often we sync the remote node
-        if poll: self.poll_count=int(poll)/self.refresh
+        if self.refresh and poll: self.poll_count=int(poll)/self.refresh
         self.cfg=cfg
 
     def request(self,requests):

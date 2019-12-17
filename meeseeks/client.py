@@ -22,9 +22,11 @@ c.close()           #disconnect client
 
 class Client(State):
     '''client class to connect to a node and manage the state of it and all downstream nodes.
+        Client methods are available to make direct requests
         State object's methods are available to get status and manage jobs
-        methods are also available to make direct requests'''
-    def __init__(self,address=None,port=13700,timeout=10,refresh=1,poll=10,expire=60,**cfg):
+        to use State methods, set refresh > 0 to start node sync thread
+    '''
+    def __init__(self,address=None,port=13700,timeout=10,refresh=0,poll=10,expire=60,**cfg):
 
         #state object to cache cluster state from the node
         State.__init__(self,None,
@@ -32,6 +34,7 @@ class Client(State):
                         expire_active_jobs=False)
      
         #internal node object to communicate with the node
+        #refresh defaults to 0 for client, set > 0 to start node sync thread
         self.__node=Node(None,None,self,
                         address=address,
                         port=port,
