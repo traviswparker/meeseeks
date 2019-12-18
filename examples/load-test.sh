@@ -1,5 +1,4 @@
 #!/bin/bash 
-(cd .. && source .meeseeks-conf)
 
 rm *.state
 rm *.history

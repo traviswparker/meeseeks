@@ -1,5 +1,4 @@
 #!/bin/bash
-(cd .. && source .meeseeks-conf)
 
 meeseeks-box master.cfg &
 

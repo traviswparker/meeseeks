@@ -23,7 +23,7 @@ def usage():
     commands are:
         sub <pool[@node]> <executable> [args....]
             options for submit:
-                filter= (list of nodes to route job through)
+                filter= (only use nodes with names matching this pattern, will also be set if node ends with *)
                 stdin= stdout= stderr= (redirect job in/out/err to files named)
                 restart= (1=restart when done)
                 retries= (times to retry if job fails)
@@ -143,6 +143,7 @@ try:
     args=sys.argv[1:]
     if not cmd:
         c,args=cmdline_parser(args)
+        if not args: sys.exit(usage())
         cfg.update(c)
         cmd,args=args[0],args[1:] #end of options
     if 'file' in cfg: cfg.update(read_cfg_files(cfg['file']))
@@ -157,14 +158,24 @@ try:
     if cmd.startswith('sub'):
         #get pool, args and optional node selection
         pool=jobargs=node=None
-        if args: 
+        if 'node' in cfg:
+            node=cfg['node']
+            del cfg['node']
+        if 'pool' in cfg:
+            pool=cfg['pool']
+            del cfg['node']
+        elif args: 
             pool=args[0]
-            if len(args)>1: jobargs=args[1:]
-        if pool and '@' in pool: pool,node=pool.split('@',1)
+            args=args[1:]
+        if pool and '@' in pool:
+            pool,node=pool.split('@',1)
+        if node and node.endswith('*'):
+            cfg['filter']=node[:-1]
+            node=None
         #if we are refreshing on the job, submit locally and let it dispatch
-        if cfg.get('refresh'): jids=[client.submit_job(pool=pool,args=jobargs,node=node,**cfg)]
+        if cfg.get('refresh'): jids=[client.submit_job(pool=pool,args=args,node=node,**cfg)]
         #submit directly and return jid
-        else: print(client.submit(pool=pool,args=jobargs,node=node,**cfg))
+        else: pretty_print(client.submit(pool=pool,args=args,node=node,**cfg))
 
     else: #if not submit, parse as key=value args and job ids
         kwargs,args=cmdline_parser(args)

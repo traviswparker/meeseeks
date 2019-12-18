@@ -219,7 +219,7 @@ class Box:
                             
                             #filter nodes if set
                             if job.get('filter'): 
-                                nodes=[node for node in nodes if job['filter'] in node]
+                                nodes=[node for node in nodes if node.startswith(job['filter'])]
 
                             #if no nodes or job in hold, we can't assign this job yet
                             if not nodes or (job.get('hold') and not self.cfg.get('wait_in_pool')):
