@@ -66,6 +66,7 @@ def usage():
 def pretty_print(d): print (json.dumps(d, sort_keys=True, indent=4))
 
 def show(client,args,**kwargs):     
+    args=[arg[0] for arg in args]
     status=client.status() 
     nodes=status.get('nodes',{})
     pools=status.get('pools',{})
@@ -73,8 +74,8 @@ def show(client,args,**kwargs):
     if kwpool: del kwargs['pool']
     kwnode=kwargs.get('node')
     if kwnode: del kwargs['node']
-    if 'nodes' not in args and 'pools' not in args and 'jobs' not in args:
-        args.extend(['nodes','pools','jobs'])
+    if 'n' not in args and 'p' not in args and 'j' not in args:
+        args.extend(['n','p','j'])
     #put pool and job status on nodes
     for n,node in nodes.items():
         if kwnode and n != kwnode: continue
@@ -94,11 +95,11 @@ def show(client,args,**kwargs):
                         s[n].setdefault('next',{})[dn]=s[dn]
                         del s[dn]
                 if s[n].get('next'): _tree(s[n]['next']) #walk downstream
-    if 'tree' in args: _tree(nodes)
+    if 't' in args: _tree(nodes)
     #now we print the tree
     def _print(s,i=0):
         for n,node in sorted(s.items()):
-            if 'nodes' in args:
+            if 'n' in args:
                 l='\t'*i + n+'\t'
                 if node.get('online'): l+='online'
                 else: l+='offline'
@@ -106,7 +107,7 @@ def show(client,args,**kwargs):
                 if n: print(l)
             pn=set(node.get('free',{}).keys())|set(node.get('jobs',{}).keys())
             for p in sorted(pn):
-                if 'nodes' in args: l='\t'*i + '\t'
+                if 'n' in args: l='\t'*i + '\t'
                 else: l=''
                 l+='pool %s@%s'%(p,n)
                 jobs=node.get('jobs',{}).get(p,{})
@@ -114,23 +115,23 @@ def show(client,args,**kwargs):
                 l+='\t%s jobs'%jc
                 free=node.get('free',{}).get(p)
                 if type(free) is int: l+='\t%s slots free'%free
-                if 'pools' in args and ('active' not in args or jc): print (l)
+                if 'p' in args and ('a' not in args or jc): print (l)
                 l=''
-                if 'nodes' in args: l+='\t'*i+'\t'
-                if 'pools' in args: l+='\t'
-                if 'jobs' in args:
+                if 'n' in args: l+='\t'*i+'\t'
+                if 'p' in args: l+='\t'
+                if 'j' in args:
                     for (jid,job) in sorted(jobs.items(),key=lambda j: (j[1].get('state')) ):
                         flags=''
-                        if job.get('active'): flags+='A '
-                        if job.get('error'): flags+='E '
-                        if job.get('hold'): flags+='H '
-                        if job.get('retries'): flags+='R:%s '%job.get('retries')
-                        state=job.get('state','')
-                        if job.get('rc') is not None: state+=':%s'%job['rc']
-                        print(l+'%s\t%s\t%s\t(%s/%s)\t%s'%(
-                            jid,flags,
-                            state,job['start_count'],job['fail_count'],
-                            ' '.join(job.get('args',[]))) )
+                        if job.get('active'): 
+                            flags+='A'
+                            if 'start_ts' in job: rc=str(int(job['ts']-job['start_ts']))
+                            else: rc=None
+                        else: rc=job.get('rc')
+                        if job.get('error'): flags+='E'
+                        if job.get('hold'): flags+='H'
+                        if job.get('restart'): flags+='R'
+                        print(l+'%s\t%s\t%s\t%s\t%s'%(
+                            jid,flags,job['state'],rc,' '.join(job.get('args',[]))) )
             if 'next' in node:
                 _print(node['next'],i+1)
     _print(nodes,0)

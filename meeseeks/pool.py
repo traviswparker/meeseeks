@@ -113,6 +113,7 @@ class Pool(threading.Thread):
                 #get jobs assigned to this node and pool
                 pool_jobs=self.state.get(node=self.node,pool=self.pool)
                 for jid,job in pool_jobs.items():
+                    
                     #check running jobs
                     task_info={} #task info if running
                     if jid in self.__tasks:
@@ -123,25 +124,35 @@ class Pool(threading.Thread):
                         self.update_job( jid, state='failed', error='crashed' )
                     elif job['state'] == 'killed' and job.get('active'): #reset killed to set active=False
                         self.update_job(jid,state='killed')
-                    #update queued/running jobs
-                    if job['state'] == 'running' and (time.time()-job['ts'] > self.update):
-                            self.update_job(jid,**task_info) #touch it so it doesn't expire
-                    #check to see if we can start a job
-                    elif job['state'] == 'new' \
+                    
+                    #update active jobs, will also set job nactive if not in an active state
+                    if job.get('active') and (time.time()-job['ts'] > self.update):
+                            self.update_job(jid,state=job['state'],**task_info) #touch it so it doesn't expire
+                    
+                    #can we activate a job?
+                    # new and not active, 
+                    # or done and restart set, 
+                    # or failed and retries not exceeded)
+                    elif (job['state'] == 'new' and not job.get('active')) \
                         or (job['state'] == 'done' and job.get('restart')) \
                         or (job['state'] == 'failed' and job.get('fail_count') < int(job.get('retries',0)) ):
+                            self.update_job(jid,active=True) #claim the job
+                            #do we have a free slot, and is the job not on hold?
                             if not job.get('hold') and (not self.slots or (len(self.__tasks) < self.slots)):
                                  self.start_job(jid)
+
                 #check for orphaned tasks. This shouldn't happen but it can if time jumps.
                 for jid in list(self.__tasks.keys()):
                     if jid not in pool_jobs:
                         self.logger.warning('task %s not found in pool jobs'%jid)
                         self.kill_job(jid,None) #just kill it
                         del self.__tasks[jid] #recover the slot
+                        
                 #update pool status with free slots
                 if self.slots: slots_free=self.slots-len(self.__tasks)
                 else: slots_free=None #no slots defined
                 self.state.update_pool_status(self.pool,self.node,slots_free)
+
             except Exception as e: self.logger.error(e,exc_info=True)
             time.sleep(1)
 

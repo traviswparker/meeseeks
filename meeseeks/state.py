@@ -149,20 +149,21 @@ class State(threading.Thread):
                     and self.__pool_status[pool][node] is not False:
                         self.__update_pool_status(pool,node,False)
 
-    def get(self,ids=None,ts=None,seq=None,**query):
+    def get(self,ids=[],ts=None,seq=None,**query):
         '''dump a list of jobs or all jobs for a node/pool/state/or updated after a certain ts/seq'''
         with self.__lock:
             try: 
                 #turn single job id into list
                 if ids and type(ids) is not list: ids=[ids]
+                if ids: print (ids)
                 #filter by jid list and/or ts/seq greater than
                 #do not return jobs without node unless node query
                 # (prevents propagation of unrouted jobs)
                 r=dict( (jid,job.copy()) for (jid,job) in self.__jobs.items() if \
-                        (not ids or jid in ids) \
-                        and (not ts or job['ts']>ts) \
-                        and (not seq or job['seq']>seq) \
-                        and (job['node'] or 'node' in query) ) 
+                        (jid in ids) or ( not ids \
+                            and (not ts or job['ts']>ts) \
+                            and (not seq or job['seq']>seq) \
+                            and (job['node'] or 'node' in query) ) )
                 for (k,v) in query.items(): #filter by arbitrary criteria
                     r=dict((jid,job) for (jid,job) in r.items() if job.get(k)==v)
                 return r
@@ -247,7 +248,9 @@ class State(threading.Thread):
                         if 'state' in jobargs:
                             if jobargs['state']=='new': 
                                 #if no node specified, routing logic will set one
-                                if 'node' not in jobargs: jobargs['node']=False
+                                if 'node' not in jobargs: 
+                                    jobargs['node']=False
+                                    jobargs['active']=False # clear active state if removed from node
                             else: del jobargs['state'] #not allowed
                     #active jobs can only be killed, and cannot be moved
                     else:
@@ -297,7 +300,7 @@ class State(threading.Thread):
                                 del self.__jobs[jid]
                             #if we expire active jobs
                             elif self.expire_active_jobs and job.get('active'): 
-                                #this job *should* have been updated
+                                #this job *should* have been updated by the node that set it active
                                 self.logger.warning('active job %s not updated in %s seconds'%(jid,self.expire))
                                 #if we restart on fail, reset the job
                                 if job.get('retries'): self.__update_job(jid,active=False,node=False) 
