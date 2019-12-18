@@ -15,7 +15,7 @@ def usage():
     commands are:
         submit <pool[@node]> <executable> [args....]
             options for submit:
-                nodelist= (list of nodes to route job through)
+                filter= (list of nodes to route job through)
                 stdin= stdout= stderr= (redirect job in/out/err to files named)
                 restart= (1=restart when done)
                 retries= (times to retry if job fails)
@@ -112,8 +112,12 @@ def show(client,args,**kwargs):
                 if 'pools' in args: l+='\t'
                 if 'jobs' in args:
                     for (jid,job) in sorted(jobs.items(),key=lambda j: (j[1].get('state')) ):
-                        print(l+'%s\t%s (%s/%s)\t%s'%(
-                            jid,
+                        flags=''
+                        if job.get('active'): flags+='A '
+                        if job.get('hold'): flags+='H '
+                        if job.get('retries'): flags+='R:%s '%job.get('retries')
+                        print(l+'%s\t%s\t%s\t(%s/%s)\t%s'%(
+                            jid,flags,
                             job['state'],job['start_count'],job['fail_count'],
                             ' '.join(job.get('args',[]))) )
             if 'next' in node:

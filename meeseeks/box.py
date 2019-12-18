@@ -221,7 +221,8 @@ class Box:
                             if job.get('filter'): 
                                 nodes=[node for node in nodes if job['filter'] in node]
 
-                            if not nodes: #we can't assign this job yet so put it on this node
+                            #if no nodes or job in hold, we can't assign this job yet
+                            if not nodes or (job.get('hold') and not self.cfg.get('wait_in_pool')):
                                 if not job['node']: self.state.update_job(jid,node=self.name)
                                 continue 
 
