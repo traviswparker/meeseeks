@@ -46,7 +46,7 @@ def usage():
         reset <jobids | filter> (restart job)
 
         stat|show [filter] {nodes pools jobs active tree} 
-            (prints a foat or tree of cluster status, 
+            (prints flat or tree cluster status, 
              specify which elements to show, defaults to flat/all)
 
         nodes (prints full node status JSON)
@@ -228,7 +228,7 @@ try:
             if 'file' in kwargs: kwargs.update(read_cfg_files(kwargs['file']))
             if args:
                 for node in args: 
-                    print(client.submit(pool='__config',node=node,args=kwargs))
+                    pretty_print(client.submit(pool='__config',node=node,args=kwargs))
             else: pretty_print(client.request(dict(config=kwargs))) #peer config push
 
         elif cmd == 'show' or cmd.startswith('stat'): show(client,args,**kwargs) #pretty print full cluster

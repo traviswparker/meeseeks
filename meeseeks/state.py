@@ -155,7 +155,6 @@ class State(threading.Thread):
             try: 
                 #turn single job id into list
                 if ids and type(ids) is not list: ids=[ids]
-                if ids: print (ids)
                 #filter by jid list and/or ts/seq greater than
                 #do not return jobs without node unless node query
                 # (prevents propagation of unrouted jobs)

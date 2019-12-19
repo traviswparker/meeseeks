@@ -142,11 +142,10 @@ class Box:
         #if we have no valid load averages, pick a random node from the pool
         else: return random.choice( nodes )
     
-    def select_by_available(self,pool,nodes):
+    def select_by_available(self,pool_status,nodes):
         #get nodes in this pool sorted from most to least open slots
         #exclude nodes in pool with no free slots unless we have no free slots
-        pool_status=self.state.get_pool_status()
-        nodes_slots=[ (pool_status[pool][node], node) for node in nodes if pool_status[pool][node] ]
+        nodes_slots=[ (pool_status[node], node) for node in nodes if pool_status[node] ]
         #do we have any nodes with pool slots?
         if nodes_slots: 
             s,node=self.biased_random(nodes_slots,reverse=True)
@@ -228,17 +227,17 @@ class Box:
 
                             #select a node for the job
                             if self.cfg.get('use_loadavg'): node=self.select_by_loadavg(nodes)
-                            else: node=self.select_by_available(pool,nodes)
+                            else: node=self.select_by_available(pool_status,nodes)
 
-                            #update the local free slot count pending node sending new count
+                            #route the job
                             slots=pool_status[node]
+                            self.logger.info('routing %s for %s to %s (%s)'%(jid,pool,node,slots))
+                            self.state.update_job(jid,node=node)
+
+                            #update the local free slot count
                             if type(slots) is int and slots > 0: 
                                 slots-=1
                                 self.state.update_pool_status(pool,node,slots)
-
-                            #route the job
-                            self.logger.info('routing %s for %s to %s (%s)'%(jid,pool,node,slots))
-                            self.state.update_job(jid,node=node)
                             
                         except Exception as e: self.logger.warning(e,exc_info=True)
                     
