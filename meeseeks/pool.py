@@ -39,13 +39,14 @@ class Pool(threading.Thread):
         self.config(**cfg)
         self.start()
 
-    def config(self,update=30,slots=None,runtime=None,**cfg):
-        if update: self.update=int(update) #how often we update the state of running jobs
+    def config(self,update=30,slots=None,runtime=None,drain=False,**cfg):
+        self.update=int(update) #how often we update the state of running jobs
         if runtime: self.max_runtime=int(runtime)
         else: self.max_runtime=None
-        if slots is not None: #number of job slots (>0:set slots, 0:not defined, <0 drains pool)
-            if slots==0: self.slots=None
+        if slots is not None: #number of job slots (>0:set slots, 0:not defined)
+            if slots==0: self.slots=True
             else: self.slots=int(slots) 
+        if drain: self.slots=0 #set free slots to 0 to drain pool
 
     def update_job(self,jid,**data):
         '''hook for state.update_job that sets active flag'''
@@ -137,7 +138,7 @@ class Pool(threading.Thread):
                         or (job['state'] == 'failed' and job.get('fail_count') < int(job.get('retries',0)) ):
                             self.update_job(jid,active=True) #claim the job
                             #do we have a free slot, and is the job not on hold?
-                            if not job.get('hold') and (not self.slots or (len(self.__tasks) < self.slots)):
+                            if not job.get('hold') and ((self.slots is True) or (len(self.__tasks) < self.slots)):
                                  self.start_job(jid)
 
                 #check for orphaned tasks. This shouldn't happen but it can if time jumps.
@@ -148,9 +149,7 @@ class Pool(threading.Thread):
                         del self.__tasks[jid] #recover the slot
                         
                 #update pool status with free slots
-                if self.slots: slots_free=self.slots-len(self.__tasks)
-                else: slots_free=None #no slots defined
-                self.state.update_pool_status(self.pool,self.node,slots_free)
+                self.state.update_pool(self.pool,self.node,self.slots)
 
             except Exception as e: self.logger.error(e,exc_info=True)
             time.sleep(1)
@@ -163,4 +162,4 @@ class Pool(threading.Thread):
             self.update_job( jid, state='failed', error='shutdown')
 
         #at shutdown remove self from pool status
-        self.state.update_pool_status(self.pool,self.node,False)
+        self.state.update_pool(self.pool,self.node,False)

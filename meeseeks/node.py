@@ -75,7 +75,7 @@ class Node(threading.Thread):
             
             #we sync updates for all nodes that are routed through the remote node
             #if self.node is None, we are are a client and always send updates
-            node_status=self.state.get_node_status()
+            node_status=self.state.get_nodes()
             sync=dict( (jid,job) for (jid,job) in self.state.get(seq=local_seq).items() \
                         if self.node is None or \
                             job['node'] in node_status.get(self.remote_node,{}).get('routing',[])
@@ -91,7 +91,7 @@ class Node(threading.Thread):
 
             #get status if poll interval
             poll=(poll+1)%self.poll_count
-            if not poll: req.update(status={}) 
+            if not poll: req.update(nodes={}) 
             
             #make request
             responses=self.request([req])
@@ -102,7 +102,8 @@ class Node(threading.Thread):
                 jobs=response.get('get',{})
                 #get highest remote seq number
                 if jobs: remote_seq=max(job['seq'] for job in jobs.values())
-                status=response.get('status',{})
+                #get node status
+                status=response.get('nodes',{})
                 updated=self.state.sync(jobs,status,remote_node=self.remote_node)
                 self.logger.debug('%s sent %s, updated %s, local_seq %s, remote_seq %s'%
                     (time.time(),len(sync),len(updated),local_seq,remote_seq)    )

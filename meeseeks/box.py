@@ -115,7 +115,7 @@ class Box:
         self.logger.info('stopping %s'%node.name)
         node.join()
         del self.nodes[n]
-        self.state.update_node_status(n,online=False,remove=True)
+        self.state.update_node(n,online=False,remove=True)
 
     def get_loadavg(self):
         try:
@@ -132,9 +132,8 @@ class Box:
             if len(l) > 1: return random.choice( l[ 0:random.randint(1,len(l)) ] )
             else: return l[0] #only one item...
 
-    def select_by_loadavg(self,nodes):
+    def select_by_loadavg(self,node_status,nodes):
         #loadvg,node sorted low to high
-        node_status=self.state.get_node_status()
         loadavg_nodes=[ (node_status[node].get('loadavg'), node) for node in nodes \
             if node_status[node].get('loadavg') is not None ] 
         #do we have any valid load averages?
@@ -145,7 +144,8 @@ class Box:
     def select_by_available(self,pool_status,nodes):
         #get nodes in this pool sorted from most to least open slots
         #exclude nodes in pool with no free slots unless we have no free slots
-        nodes_slots=[ (pool_status[node], node) for node in nodes if pool_status[node] ]
+        nodes_slots=[ (pool_status[node], node) for node in nodes if \
+            (pool_status[node] and pool_status[node] is not True) ]
         #do we have any nodes with pool slots?
         if nodes_slots: 
             s,node=self.biased_random(nodes_slots,reverse=True)
@@ -177,15 +177,15 @@ class Box:
             while not self.shutdown.is_set() and not self.restart.is_set():
                 #update our node status
                 #we can route to nodes we see via our connected nodes
-                self.state.update_node_status( self.name,
+                self.state.update_node( self.name,
                     online=True,
                     ts=time.time(),
                     loadavg=self.get_loadavg(),
-                    routing=list(self.state.get_node_status().keys()) ) 
+                    routing=list(self.state.get_nodes().keys()) ) 
 
                 #job routing logic
                 try:
-                    #get config jobs assigned to us
+                    #handle config jobs assigned to us
                     for jid,job in self.state.get(node=self.name,pool='__config').items():
                         if job['state'] == 'new':
                             self.logger.debug('got __config job %s: %s'%(jid,job))
@@ -201,43 +201,33 @@ class Box:
                         if job['pool'] not in self.pools.keys() )
                     #add jobs without node assigned, these were just submitted and need routing
                     jobs.update(self.state.get(node=False))
+                    node_status=self.state.get_nodes()
                     for jid,job in jobs.items():
                         try:
                             pool=job['pool']
-                            pool_status=self.state.get_pool_status().get(pool,{})
+                            pool_status=self.state.get_pools().get(pool,{})
                             #we need to select a node:
-                            # not marked for removal (slots is False)
-                            # not set to drain (slots < 0)
                             # with open slots (slots > 0)
-                            # or full (slots is 0) but jobs can wait
-                            # or without defined slots (slots is None)
-                            nodes=list(node for node,slots in pool_status.items() \
-                                if slots is not False \
-                                    and ( slots is None or slots > 0 or \
-                                        ( slots==0 and self.cfg.get('wait_in_pool') ) ) )
+                            # or full (slots is < 1) but jobs can wait
+                            # or without defined slots (slots is True)
+                            nodes=[node for node,slots in pool_status.items() if int(slots)>0 or self.cfg.get('wait_in_pool')]
                             
                             #filter nodes if set
-                            if job.get('filter'): 
-                                nodes=[node for node in nodes if node.startswith(job['filter'])]
+                            if job.get('filter'): nodes=[node for node in nodes if node.startswith(job['filter'])]
 
-                            #if no nodes or job in hold, we can't assign this job yet
+                            #if no nodes or job in hold, we can't route this job yet
                             if not nodes or (job.get('hold') and not self.cfg.get('wait_in_pool')):
-                                if not job['node']: self.state.update_job(jid,node=self.name)
+                                if not job['node']: self.state.update_job(jid,node=self.name) #assign to us for now
                                 continue 
 
                             #select a node for the job
-                            if self.cfg.get('use_loadavg'): node=self.select_by_loadavg(nodes)
+                            if self.cfg.get('use_loadavg'): node=self.select_by_loadavg(node_status,nodes)
                             else: node=self.select_by_available(pool_status,nodes)
 
                             #route the job
                             slots=pool_status[node]
                             self.logger.info('routing %s for %s to %s (%s)'%(jid,pool,node,slots))
                             self.state.update_job(jid,node=node)
-
-                            #update the local free slot count
-                            if type(slots) is int and slots > 0: 
-                                slots-=1
-                                self.state.update_pool_status(pool,node,slots)
                             
                         except Exception as e: self.logger.warning(e,exc_info=True)
                     
@@ -287,14 +277,9 @@ class Box:
         # List all jobs
         if 'ls' in request:
             response['ls']=self.state.list_jobs(**request['ls'])
-        #get cluster status
-        if 'status' in request: 
-            response['status']={     
-                #return the status of us and downstream nodes
-                'nodes':self.state.get_node_status(),
-                #return the status of pools we know about
-                'pools':self.state.get_pool_status() 
-            }
+        #return the status of us and downstream nodes
+        if 'nodes' in request: response['nodes']=self.state.get_nodes()  
+        if 'pools' in request: response['pools']=self.state.get_pools()  
         #get/set config
         if 'config' in request:
             cfg=request['config']

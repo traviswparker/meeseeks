@@ -70,10 +70,8 @@ class State(threading.Thread):
         self.shutdown=threading.Event()
         self.__lock=threading.Lock() #lock on __jobs dict
         self.__jobs={} #(partial) cluster job state, this is private because we lock during any changes
-        self.__pool_status={} #map of [pool][node][open slots] for nodes we connect downstream to
-        self.__node_status={} #map of node:last status
+        self.__status={} #map of node:{online:bool, routing:[nodes seen], pools:{pool:slots} }
         self.__seq=1 #update sequence number. Always increments.
-        self.__pool_ts=0 #pool status timestamp, cleaned up every expire
         self.hist_fh=None
         self.__hist_seq=0 #history sequence number.
         self.state_file=None
@@ -118,36 +116,39 @@ class State(threading.Thread):
                     self.logger.info('loaded state from %s'%self.state_file)
             except Exception as e: self.logger.warning('%s:%s'%(self.state_file,e)) 
 
-    #these return a copy of the private state, use update_ methods to modify it
-    def get_pool_status(self): 
-        '''get a pool:node:slots_free map of pool availability'''
-        return self.__pool_status.copy()
+    #these return a copy of the state, use update_ methods to modify it
 
-    def get_node_status(self): 
+    def get_nodes(self): 
         '''get a node:status map of cluster status'''
-        return self.__node_status.copy()
+        return self.__status.copy()
     
-    def update_pool_status(self,pool,node,slots=None): 
-        '''set free slots in pool for node
-            if slots < 0 pool is being drained, will not get new jobs
-            if slots is 0 pool is full but jobs may wait if other nodes are full
-            if slots is None no slots are defined, jobs will be assigned if no other slots available
-            if slots is False node will be expired from pool'''
-        with self.__lock: self.__update_pool_status(pool,node,slots)
-    def __update_pool_status(self,pool,node,slots):
-        self.__pool_status.setdefault(pool,{})[node]=slots
+    def get_pools(self): 
+        '''get a pool:node:slots_free map of pool availability'''
+        pools={}
+        for n,node in self.get_nodes().items():
+            for pool,slots in node['pools'].items():
+                if slots is not True: #if limit set, subtract pending/running jobs
+                    slots-=len( [ job for job in self.get(node=n,pool=pool).values() \
+                        if job['state'] not in self.JOB_INACTIVE ] )
+                pools.setdefault(pool,{})[n]=slots
+        return pools
 
-    def update_node_status(self,node,**node_status): 
-        '''set node status, remove node from pool if node offline'''
-        with self.__lock: self.__update_node_status(node,**node_status)
-    def __update_node_status(self,node,**node_status): 
-        self.__node_status.setdefault(node,{}).update(**node_status)
-        #take offline nodes out of the pools
-        if not node_status.get('online'):
-            for pool in self.__pool_status.keys():
-                if node in self.__pool_status[pool] \
-                    and self.__pool_status[pool][node] is not False:
-                        self.__update_pool_status(pool,node,False)
+    def update_node(self,node,**node_status): 
+        '''set node status, remove node pools if node offline'''
+        with self.__lock: self.__update_node(node,**node_status)
+    def __update_node(self,node,**node_status): 
+        self.__status.setdefault(node,{'pools':{}}).update(**node_status)
+        #remove offline nodes from pools
+        if not self.__status[node].get('online'): 
+            self.__status[node]['pools']={}
+
+    def update_pool(self,pool,node,slots): 
+        '''set slots in pool for node'''
+        with self.__lock: self.__update_pool(pool,node,slots)
+    def __update_pool(self,pool,node,slots):
+        if slots: self.__status.setdefault(node,{'pools':{}})['pools'][pool]=slots
+        elif node in self.__status and pool in self.__status[node]['pools']: 
+            del self.__status[node]['pools'][pool]
 
     def get(self,ids=[],ts=None,seq=None,**query):
         '''dump a list of jobs or all jobs for a node/pool/state/or updated after a certain ts/seq'''
@@ -180,22 +181,18 @@ class State(threading.Thread):
                         self.__update_job(jid,**job)
                         updated.append(jid)
                 #update our status from incoming status data
-                for node,node_status in status.get('nodes',{}).items():
-                    self.__update_node_status(node,**node_status)
-                for pool,nodes in status.get('pools',{}).items():
-                    for node,slots in nodes.items(): 
-                        self.__update_pool_status(pool,node,slots)
+                for node,node_status in status.items():
+                    self.__update_node(node,**node_status)
             except Exception as e: self.logger.warning(e,exc_info=True)
         #return updated items
         return updated
 
     def get_job(self,jid):
         '''return job jid's data from state'''
-        with self.__lock:
-            try:
-                if jid in self.__jobs: return self.__jobs.get(jid).copy()
-            except Exception as e: self.logger.warning(e,exc_info=True)
-    
+        try:
+            if jid in self.__jobs: return self.__jobs.get(jid).copy()
+        except Exception as e: self.logger.warning(e,exc_info=True)
+
     def update_job(self,jid,**data):
         '''update job jid with k/v in data and set/clear active flag
         this is ONLY to be used by the agent as no sanity checks are performed'''
@@ -258,7 +255,7 @@ class State(threading.Thread):
                         if 'node' in jobargs: del jobargs['node']
                         if 'pool' in jobargs: del jobargs['pool']
                 else: #this is a new job
-                    if not jobargs.get('pool'): return False #jobs have to have a pool to run in
+                    if not jobargs.get('pool'): return {jid:False} #jobs have to have a pool to run in
                     job={  
                             'submit_ts':time.time(),    #submit timestamp
                             'node':False,               #no node assigned unless jobargs set one
@@ -269,15 +266,14 @@ class State(threading.Thread):
                 job.update(**jobargs)
                 #if not job.get('node'): job['node']=self.node #set job to be handled/routed by this node
                 self.__update_job(jid,**job)
-                return jid
+                return {jid:job}
             except Exception as e: self.logger.warning(e,exc_info=True)
 
     def __state_run(self):
         self.logger.info('started')
         checkpoint_count=0
         while not self.shutdown.is_set():
-            self.logger.debug('status %s'%self.__node_status)
-            self.logger.debug('pools %s'%self.__pool_status)
+            self.logger.debug('status %s'%self.__status)
             with self.__lock:
                 try:
                     #write recently finished jobs to history
@@ -306,25 +302,14 @@ class State(threading.Thread):
                                 #set job to failed, it will restart if it can
                                 self.__update_job(jid,state='failed',error='expired')
                     #set nodes that have not sent status to offline
-                    for node,node_status in self.__node_status.copy().items():
+                    for node,node_status in self.__status.copy().items():
                         if time.time()-node_status.get('ts',0) > self.timeout:
                             if node_status.get('online'):
                                 self.logger.warning('node %s not updated in %s seconds'%(node,self.expire))
-                                self.__update_node_status(node,online=False)
+                                self.__update_node(node,online=False)
                             elif node_status.get('remove'): #offline node is marked for upstream removal
                                 self.logger.info('removing node %s' %node)
-                                del self.__node_status[node]
-                    #remove offline nodes from pool status and remove empty pools
-                    if time.time()-self.__pool_ts > self.timeout:
-                        for pool,nodes in self.__pool_status.copy().items():
-                            for node,slots in nodes.copy().items():
-                                if slots is False: 
-                                    self.logger.info('removing node %s from pool %s'%(node,pool))
-                                    del self.__pool_status[pool][node]
-                            if not self.__pool_status[pool]:
-                                self.logger.info('removing empty pool %s'%(pool))
-                                del self.__pool_status[pool]
-                        self.__pool_ts=time.time()
+                                del self.__status[node]
                 except Exception as e: self.logger.warning(e,exc_info=True)
                 if self.checkpoint:
                     checkpoint_count=(checkpoint_count+1) % self.checkpoint

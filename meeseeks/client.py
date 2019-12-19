@@ -11,8 +11,8 @@ from .node import Node
 Example:
 from meeseeks import Client
 c=Client('localhost')
-c.get_node_status() #get cluster status
-c.get_pool_status() #get pools
+c.get_nodes() #get cluster status
+c.get_pools() #get pools
 c.get()             #get all jobs
 j=c.submit_job(pool=...,args=[.....])  #submit a job, return the ID
 c.get_job(j)        #check the job
@@ -67,7 +67,8 @@ class Client(State):
     def ls(self,**kwargs): return self.__node.request([{'ls':kwargs}])[0]['ls']
     
     #get node and pool status, kwargs are sent but ignored (for now)
-    def status(self,**kwargs): return self.__node.request([{'status':kwargs}])[0]['status']
+    def nodes(self,**kwargs): return self.__node.request([{'nodes':kwargs}])[0]['nodes']
+    def pools(self,**kwargs): return self.__node.request([{'pools':kwargs}])[0]['pools']
     
     #for sending raw requests
     def request(self,req): return self.__node.request([req])[0]

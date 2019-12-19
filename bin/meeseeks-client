@@ -67,7 +67,7 @@ def pretty_print(d): print (json.dumps(d, sort_keys=True, indent=4))
 
 def show(client,args,**kwargs):     
     args=[arg[0] for arg in args]
-    status=client.status() 
+    status=client.request({'nodes':None,'pools':None}) 
     nodes=status.get('nodes',{})
     pools=status.get('pools',{})
     kwpool=kwargs.get('pool')
@@ -153,7 +153,7 @@ try:
     jids,query=None,{}
     #if we will be refreshing, refresh now until state populated
     if cfg.get('refresh'):
-        while not client.get_node_status(): time.sleep(1)
+        while not client.get_nodes(): time.sleep(1)
 
     if cmd.startswith('sub'):
         #get pool, args and optional node selection
@@ -213,16 +213,16 @@ try:
         elif cmd == 'nodes': 
             if cfg.get('refresh'): 
                 while True:
-                    pretty_print(client.get_node_status())
+                    pretty_print(client.get_nodes())
                     time.sleep(cfg.get('refresh'))
-            else: pretty_print(client.status()['nodes'])
+            else: pretty_print(client.nodes())
 
         elif cmd == 'pools': 
             if cfg.get('refresh'): 
                 while True:
-                    pretty_print(client.get_pool_status())
+                    pretty_print(client.get_pools())
                     time.sleep(cfg.get('refresh'))
-            else: pretty_print(client.status()['pools'])
+            else: pretty_print(client.pools())
 
         elif cmd.startswith('conf'): 
             if 'file' in kwargs: kwargs.update(read_cfg_files(kwargs['file']))
@@ -247,7 +247,7 @@ try:
             if updates: pretty_print(updates)
             seq=dict((jid,job['seq']) for (jid,job) in jobs.items())
             time.sleep(cfg.get('refresh'))
-except Exception as e: print (e,file=sys.stderr)
+except Exception as e: raise #print (e,file=sys.stderr)
 
 #if we were polling state, stop gracefully
 if cfg.get('refresh'): client.close()
