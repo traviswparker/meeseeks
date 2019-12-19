@@ -194,8 +194,7 @@ class State(threading.Thread):
         except Exception as e: self.logger.warning(e,exc_info=True)
 
     def update_job(self,jid,**data):
-        '''update job jid with k/v in data and set/clear active flag
-        this is ONLY to be used by the agent as no sanity checks are performed'''
+        '''update job jid with k/v in data, no sanity checks are performed'''
         with self.__lock: 
             if jid in self.__jobs: return self.__update_job(jid,**data)
             else: return False
@@ -281,7 +280,7 @@ class State(threading.Thread):
                         if job['seq'] > self.__hist_seq and job['state'] in self.JOB_INACTIVE:
                             self.write_history(jid)
                     self.__hist_seq=self.__seq
-                    #scan for jobs that need a node
+                    #scan for jobs that may not have made it to the node and repush them
                     for jid,job in self.__jobs.items():
                         if job['state'] == 'new' and time.time()-job['ts'] > self.timeout:
                             self.logger.debug('job %s still in state new'%jid)

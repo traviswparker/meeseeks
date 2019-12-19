@@ -145,7 +145,7 @@ class Box:
         #get nodes in this pool sorted from most to least open slots
         #exclude nodes in pool with no free slots unless we have no free slots
         nodes_slots=[ (pool_status[node], node) for node in nodes if \
-            (pool_status[node] and pool_status[node] is not True) ]
+            (pool_status[node]>0 and pool_status[node] is not True) ]
         #do we have any nodes with pool slots?
         if nodes_slots: 
             s,node=self.biased_random(nodes_slots,reverse=True)
@@ -210,7 +210,7 @@ class Box:
                             # with open slots (slots > 0)
                             # or full (slots is < 1) but jobs can wait
                             # or without defined slots (slots is True)
-                            nodes=[node for node,slots in pool_status.items() if int(slots)>0 or self.cfg.get('wait_in_pool')]
+                            nodes=[node for node,free_slots in pool_status.items() if free_slots or self.cfg.get('wait_in_pool')]
                             
                             #filter nodes if set
                             if job.get('filter'): nodes=[node for node in nodes if node.startswith(job['filter'])]

@@ -168,15 +168,19 @@ killed: job was killed, rc may be set if job was running.
 
     ./meeseeks-client [options] <command> [args...]
 
+    or use q-symlinks: q{stat|sub|del|mod|get|conf} [args]
+
     commands are:
-        submit <pool[@node]> <executable> [args....]
+        sub <pool[@node]> <executable> [args....] (submits job, returns job info)
             options for submit:
-                nodelist= (list of nodes to route job through)
+                pool= sets pool for job to run in
+                node= sets node for job to run on
+                filter= (only use nodes with names matching this pattern, will also be set if <node> ends with *)
                 stdin= stdout= stderr= (redirect job in/out/err to files named)
                 restart= (1=restart when done)
                 retries= (times to retry if job fails)
                 runtime= (max runtime of job)
-                id= (job id to submit changes to existing job)
+                id= (set new job's id or submit changes to existing job)
                 state= (change existing job state, 'new' will restart finished job)
                 hold= (1=queue but do not start job)
 
@@ -186,22 +190,22 @@ killed: job was killed, rc may be set if job was running.
 
         ls [filter] (list job ids)
 
-        set <jobids | filter :> key=value ... (set key=value in jobs matching jobids or filter)
-            if a filter is provided, : is used to delimit filter key=value from set key=value
+        del|kill <jobids | filter> (kill job)
 
-        kill <jobids | filter> (kill job)
+        mod|set <jobids | filter : > key=value ... (set key=value in jobs matching jobids or filter, return new job info)
+            if a filter is provided, ':' is used to delimit filter key=value from job key=value
+            set a job in any finished state (done,failed,killed) to state='new' to restart job
+            if node is not specified when restarting job, node will be cleared.
 
-        reset <jobids | filter> (restart finished job, reassign new job, or kill/restart running job)
-
-        show [filter] {nodes pools jobs active tree} 
-            (prints a foat or tree of cluster status, 
+        stat|show [filter] {nodes pools jobs active tree} 
+            (prints flat or tree cluster status, 
              specify which elements to show, defaults to flat/all)
 
         nodes (prints full node status JSON)
 
         pools (prints full pool status JSON)
 
-        config [key=value] [node]
+        conf [key=value] [node]
             get/sends config to directly connected or specified node
 
     generic options are: 

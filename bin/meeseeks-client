@@ -17,33 +17,37 @@ else: cmd=None
 def usage():
 
     print("""
-    q{stat|sub|del|mod|get|conf} [args]
+    
     %s [options] <command> [args...]
 
+    or use q-symlinks: q{stat|sub|job|del|mod|conf} [args]
+
     commands are:
-        sub <pool[@node]> <executable> [args....]
+        sub <pool[@node]> <executable> [args....] (submits job, returns job info)
             options for submit:
-                filter= (only use nodes with names matching this pattern, will also be set if node ends with *)
+                pool= sets pool for job to run in
+                node= sets node for job to run on
+                filter= (only use nodes with names matching this pattern, will also be set if <node> ends with *)
                 stdin= stdout= stderr= (redirect job in/out/err to files named)
                 restart= (1=restart when done)
                 retries= (times to retry if job fails)
                 runtime= (max runtime of job)
-                id= (job id to submit changes to existing job)
+                id= (set new job's id or submit changes to existing job)
                 state= (change existing job state, 'new' will restart finished job)
                 hold= (1=queue but do not start job)
 
-        get [jobids | filter] (get all or specified job info as JSON)
+        job|get [jobids | filter] (get all or specified job info as JSON)
             jobids are any number of job id arguments
             filter is any job attributes such as node= pool= state=
 
         ls [filter] (list job ids)
 
-        set|mod <jobids | filter :> key=value ... (set key=value in jobs matching jobids or filter)
-            if a filter is provided, : is used to delimit filter key=value from set key=value
-
         del|kill <jobids | filter> (kill job)
 
-        reset <jobids | filter> (restart job)
+        mod|set <jobids | filter : > key=value ... (set key=value in jobs matching jobids or filter, return new job info)
+            if a filter is provided, ':' is used to delimit filter key=value from job key=value
+            set a job in any finished state (done,failed,killed) to state='new' to restart job
+            if node is not specified when restarting job, node will be cleared.
 
         stat|show [filter] {nodes pools jobs active tree} 
             (prints flat or tree cluster status, 
@@ -114,7 +118,7 @@ def show(client,args,**kwargs):
                 jc=len(jobs)
                 l+='\t%s jobs'%jc
                 free=node.get('free',{}).get(p)
-                if type(free) is int: l+='\t%s slots free'%free
+                if type(free) is int: l+='\t%s free'%max(free,0)
                 if 'p' in args and ('a' not in args or jc): print (l)
                 l=''
                 if 'n' in args: l+='\t'*i+'\t'
@@ -123,13 +127,13 @@ def show(client,args,**kwargs):
                     for (jid,job) in sorted(jobs.items(),key=lambda j: (j[1].get('state')) ):
                         flags=''
                         if job.get('active'): 
-                            flags+='A'
+                            flags+='A '
                             if 'start_ts' in job: rc=str(int(job['ts']-job['start_ts']))
                             else: rc=None
                         else: rc=job.get('rc')
-                        if job.get('error'): flags+='E'
-                        if job.get('hold'): flags+='H'
-                        if job.get('restart'): flags+='R'
+                        if job.get('error'): flags+='E '
+                        if job.get('hold'): flags+='H '
+                        if job.get('restart'): flags+='R '
                         print(l+'%s\t%s\t%s\t%s\t%s'%(
                             jid,flags,job['state'],rc,' '.join(job.get('args',[]))) )
             if 'next' in node:
@@ -179,7 +183,7 @@ try:
 
     else: #if not submit, parse as key=value args and job ids
         kwargs,args=cmdline_parser(args)
-        if cmd == 'get': #get jobs by ids or filter on key=value
+        if cmd == 'get' or cmd == 'job': #get jobs by ids or filter on key=value
             if cfg.get('refresh'):
                 if args: jids=args
                 else: jids=True #get all
@@ -197,18 +201,6 @@ try:
         elif cmd == 'ls': pretty_print(client.ls(**kwargs))
 
         elif cmd == 'kill' or cmd == 'del': pretty_print(client.kill(args,**kwargs))
-
-        elif cmd == 'reset': #reset jobs
-            #to reset active jobs we have to kill them and wait for active=False
-            jids=list(jid for (jid,job) in client.kill(args,**kwargs).items() if job)
-            while jids: #while we have remaining jobs
-                #restart jobs that are now inactive
-                for jid in list(jid for (jid,job) in client.query(ids=jids).items() if not job.get('active')):
-                    client.submit(id=jid,state='new') #submit to existing and change state to new, this resets job
-                    pretty_print(client.query(jid))
-                    jids.remove(jid) #remove from list
-                if jids:
-                    time.sleep(cfg.get('refresh',1)) #if some jobs are still active, wait and try again
 
         elif cmd == 'nodes': 
             if cfg.get('refresh'): 
