@@ -18,8 +18,11 @@ done
 
 meeseeks-box name=submit state.file=cluster.state state.checkpoint=60 state.history=job.history defaults.address=127.0.0.1 nodes.head1.port=13710 nodes.head2.port=13720 nodes.head3.port=13730 nodes.head4.port=13740 nodes.head5.port=13750 nodes.head6.port=13760 nodes.head7.port=13770 nodes.head8.port=13780 nodes.head9.port=13790 &
 
-sleep 10
+sleep 20
+qstat t
 
-for j in {1..300}; do meeseeks-client id=job$j sub p1 sleep $j; done 
+qsub p1@* sleep 300
+sleep 10
+qstat t
 
 while true; do sleep 1; done

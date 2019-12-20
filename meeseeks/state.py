@@ -121,27 +121,26 @@ class State(threading.Thread):
     def get_nodes(self): 
         '''get a node:status map of cluster status'''
         return self.__status.copy()
-    
-    def get_pools(self): 
-        '''get a pool:node:slots_free map of pool availability'''
-        pools={}
-        for n,node in self.get_nodes().items():
-            for pool,slots in node['pools'].items():
-                if slots is not True: #if limit set, subtract pending/running jobs
-                    slots-=len( [ job for job in self.get(node=n,pool=pool).values() \
-                        if job['state'] not in self.JOB_INACTIVE ] )
-                pools.setdefault(pool,{})[n]=slots
-        return pools
-
     def update_node(self,node,**node_status): 
         '''set node status, remove node pools if node offline'''
         with self.__lock: self.__update_node(node,**node_status)
     def __update_node(self,node,**node_status): 
         self.__status.setdefault(node,{'pools':{}}).update(**node_status)
         #remove offline nodes from pools
-        if not self.__status[node].get('online'): 
-            self.__status[node]['pools']={}
+        if not self.__status[node].get('online'): self.__status[node]['pools']={}
 
+    def get_pools(self): 
+        '''get a pool:node:slots_free map of pool availability'''
+        with self.__lock: return self.__get_pools()
+    def __get_pools(self):
+        pools={}
+        for n,node in self.get_nodes().items():
+            for pool,slots in node['pools'].items():
+                if slots is not True: #if limit set, subtract pending/running jobs
+                    slots-=len( [ job for job in self.__get(node=n,pool=pool).values() \
+                        if job['state'] not in self.JOB_INACTIVE ] )
+                pools.setdefault(pool,{})[n]=slots
+        return pools
     def update_pool(self,pool,node,slots): 
         '''set slots in pool for node'''
         with self.__lock: self.__update_pool(pool,node,slots)
@@ -152,22 +151,23 @@ class State(threading.Thread):
 
     def get(self,ids=[],ts=None,seq=None,**query):
         '''dump a list of jobs or all jobs for a node/pool/state/or updated after a certain ts/seq'''
-        with self.__lock:
-            try: 
-                #turn single job id into list
-                if ids and type(ids) is not list: ids=[ids]
-                #filter by jid list and/or ts/seq greater than
-                #do not return jobs without node unless node query
-                # (prevents propagation of unrouted jobs)
-                r=dict( (jid,job.copy()) for (jid,job) in self.__jobs.items() if \
-                        (jid in ids) or ( not ids \
-                            and (not ts or job['ts']>ts) \
-                            and (not seq or job['seq']>seq) \
-                            and (job['node'] or 'node' in query) ) )
-                for (k,v) in query.items(): #filter by arbitrary criteria
-                    r=dict((jid,job) for (jid,job) in r.items() if job.get(k)==v)
-                return r
-            except Exception as e: self.logger.warning(e,exc_info=True)
+        with self.__lock: return self.__get(ids,ts,seq,**query)
+    def __get(self,ids=[],ts=None,seq=None,**query):
+        try: 
+            #turn single job id into list
+            if ids and type(ids) is not list: ids=[ids]
+            #filter by jid list and/or ts/seq greater than
+            #do not return jobs without node unless node query
+            # (prevents propagation of unrouted jobs)
+            r=dict( (jid,job.copy()) for (jid,job) in self.__jobs.items() if \
+                    (jid in ids) or ( not ids \
+                        and (not ts or job['ts']>ts) \
+                        and (not seq or job['seq']>seq) \
+                        and (job['node'] or 'node' in query) ) )
+            for (k,v) in query.items(): #filter by arbitrary criteria
+                r=dict((jid,job) for (jid,job) in r.items() if job.get(k)==v)
+            return r
+        except Exception as e: self.logger.warning(e,exc_info=True)
         return None
 
     def sync(self,jobs={},status={},remote_node=None):
@@ -226,47 +226,68 @@ class State(threading.Thread):
         
     def submit_job(self,**jobargs):
         '''add or change a job, see job spec for proper key=values'''
+        r={} #returned jid:job info map
         with self.__lock:
             try:
-                #if a new state is provided
-                state=jobargs.get('state')
-                #filter job spec keys
+                #filter job to spec keys
                 jobargs=dict((k,v) for (k,v) in jobargs.items() if (v is not None) and (k in self.JOB_SPEC))
-                jid=jobargs.get('id',str(uuid.uuid1())) #use preset id or generate one
-                job=self.__jobs.get(jid)
-                if job: #modifying an existing job
-                    del jobargs['id'] #unset incoming id
-                    del job['ts'] #unset ts to ensure update 
-                    #do sanity checks on state changes
-                    #inactive jobs can only restarted
-                    if job['state'] in self.JOB_INACTIVE:
-                        if 'state' in jobargs:
-                            if jobargs['state']=='new': 
-                                #if no node specified, routing logic will set one
-                                if 'node' not in jobargs: 
-                                    jobargs['node']=False
-                                    jobargs['active']=False # clear active state if removed from node
-                            else: del jobargs['state'] #not allowed
-                    #active jobs can only be killed, and cannot be moved
-                    else:
-                        if 'state' in jobargs and jobargs['state'] != 'killed':
-                            del jobargs['state']
-                        if 'node' in jobargs: del jobargs['node']
-                        if 'pool' in jobargs: del jobargs['pool']
-                else: #this is a new job
-                    if not jobargs.get('pool'): return {jid:False} #jobs have to have a pool to run in
-                    job={  
-                            'submit_ts':time.time(),    #submit timestamp
-                            'node':False,               #no node assigned unless jobargs set one
-                            'state':'new',
-                            'start_count':0,             
-                            'fail_count':0
-                        }
-                job.update(**jobargs)
-                #if not job.get('node'): job['node']=self.node #set job to be handled/routed by this node
-                self.__update_job(jid,**job)
-                return {jid:job}
+
+                #handle multi-node spec
+                if 'node' in jobargs: 
+                    nodes=jobargs['node']
+                    del jobargs['node']
+                    if type(nodes) is not list: #if nodes is already a list of nodenames, use it
+                        if nodes.endswith("*"): #wildcard specified
+                            if not jobargs.get('pool'): return {jid:False} #jobs have to have a pool to run in
+                            #get all nodes in the pool matching the pattern. 
+                            nodes=[ node for node in \
+                                    self.__get_pools().get(jobargs['pool'],{}).keys() \
+                                    if node.startswith(nodes[:-1]) ]
+                        else: nodes=[nodes] #single node specifies
+                else: nodes=[None] #nothing specified
+
+                #create a job for each node
+                for node in nodes:
+                    if node: jobargs['node']=node
+                    jid=jobargs.get('id',str(uuid.uuid1())) #use preset id or generate one
+                    job=self.__jobs.get(jid)
+                    if job: #modifying an existing job
+                        del jobargs['id'] #unset incoming id
+                        del job['ts'] #unset ts to ensure update 
+                        #do sanity checks on state changes
+                        #inactive jobs can only reset
+                        if job['state'] in self.JOB_INACTIVE:
+                            if 'state' in jobargs:
+                                if jobargs['state']=='new': 
+                                    #if no node specified, routing logic will set one
+                                    if jobargs.get('node'): jobargs['submit_node']=jobargs['node'] #change submit node if set
+                                    else: 
+                                        jobargs['node']=job.get('submit_node',False) #reset to submit node if set
+                                        jobargs['active']=False # clear active state if removed from node
+                                else: del jobargs['state'] #other state change not allowed
+                        #active jobs can only be killed, and cannot be moved
+                        else:
+                            if 'state' in jobargs and jobargs['state'] != 'killed':
+                                del jobargs['state']
+                            if 'node' in jobargs: del jobargs['node']
+                            if 'pool' in jobargs: del jobargs['pool']
+                    else: #this is a new job
+                        if not jobargs.get('pool'): return {jid:False} #jobs have to have a pool to run in
+                        job={  
+                                'submit_ts':time.time(),    #submit timestamp
+                                'node':jobargs.get('node',False),               #no node assigned unless jobargs set one
+                                'submit_node':jobargs.get('node',False),        #node job was submitted to, we reset to this
+                                'state':'new',
+                                'start_count':0,             
+                                'fail_count':0
+                            }
+                    job.update(**jobargs)
+                    #if not job.get('node'): job['node']=self.node #set job to be handled/routed by this node
+                    self.__update_job(jid,**job)
+                    r[jid]=job.copy()
+
             except Exception as e: self.logger.warning(e,exc_info=True)
+            return r
 
     def __state_run(self):
         self.logger.info('started')
@@ -280,11 +301,13 @@ class State(threading.Thread):
                         if job['seq'] > self.__hist_seq and job['state'] in self.JOB_INACTIVE:
                             self.write_history(jid)
                     self.__hist_seq=self.__seq
+
                     #scan for jobs that may not have made it to the node and repush them
                     for jid,job in self.__jobs.items():
                         if job['state'] == 'new' and time.time()-job['ts'] > self.timeout:
                             self.logger.debug('job %s still in state new'%jid)
                             self.__update_job(jid) #touch the job to resend it downstream
+
                     #scan for expired jobs
                     for jid,job in self.__jobs.copy().items():
                         if time.time()-job['ts'] > self.expire: 
@@ -296,10 +319,16 @@ class State(threading.Thread):
                             elif self.expire_active_jobs and job.get('active'): 
                                 #this job *should* have been updated by the node that set it active
                                 self.logger.warning('active job %s not updated in %s seconds'%(jid,self.expire))
-                                #if we restart on fail, reset the job
-                                if job.get('retries'): self.__update_job(jid,active=False,node=False) 
-                                #set job to failed, it will restart if it can
-                                self.__update_job(jid,state='failed',error='expired')
+                                #set job to failed
+                                self.__update_job(jid,state='failed',error='expired',fail_count=job.get('fail_count',0)+1)
+
+                    #scan for jobs to retry
+                    for jid,job in self.__jobs.items():
+                        #if we retry on fail, reset the job to inactive/new and assign to the submit node
+                        if job['state'] == 'failed' and job.get('fail_count') <= job.get('retries',0):
+                            self.logger.info('retry job %s (%s/%s)'%(jid,job.get('fail_count'),job.get('retries')))
+                            self.__update_job(jid,state='new',active=False,node=job.get('submit_node',False))
+
                     #set nodes that have not sent status to offline
                     for node,node_status in self.__status.copy().items():
                         if time.time()-node_status.get('ts',0) > self.timeout:
@@ -309,6 +338,7 @@ class State(threading.Thread):
                             elif node_status.get('remove'): #offline node is marked for upstream removal
                                 self.logger.info('removing node %s' %node)
                                 del self.__status[node]
+
                 except Exception as e: self.logger.warning(e,exc_info=True)
                 if self.checkpoint:
                     checkpoint_count=(checkpoint_count+1) % self.checkpoint

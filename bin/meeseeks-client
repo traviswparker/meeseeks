@@ -9,25 +9,19 @@ import time
 from meeseeks import Client
 from meeseeks.util import cmdline_parser, read_cfg_files
 
-#handle cmd from symlink to meeseeks-client
-EXEC_NAME=os.path.basename(sys.argv[0])
-if EXEC_NAME.startswith('q'):cmd=EXEC_NAME[1:]
-else: cmd=None
-
 def usage():
 
     print("""
     
-    %s [options] <command> [args...]
+    meeseeks-client [client-options] <command> [args...]
 
     or use q-symlinks: q{stat|sub|job|del|mod|conf} [args]
 
     commands are:
-        sub <pool[@node]> <executable> [args....] (submits job, returns job info)
-            options for submit:
+        sub [submit-options] <pool[@node]> <executable> [args....] (submits job, returns job info)
+            submit-options:
                 pool= sets pool for job to run in
-                node= sets node for job to run on
-                filter= (only use nodes with names matching this pattern, will also be set if <node> ends with *)
+                node= sets node(s) for job to run on. Can be comma-seperated list or end with * for all/wildcard
                 stdin= stdout= stderr= (redirect job in/out/err to files named)
                 restart= (1=restart when done)
                 retries= (times to retry if job fails)
@@ -36,15 +30,15 @@ def usage():
                 state= (change existing job state, 'new' will restart finished job)
                 hold= (1=queue but do not start job)
 
-        job|get [jobids | filter] (get all or specified job info as JSON)
+        job|get [jobids|filter] (get all or specified job info as JSON)
             jobids are any number of job id arguments
             filter is any job attributes such as node= pool= state=
 
         ls [filter] (list job ids)
 
-        del|kill <jobids | filter> (kill job)
+        del|kill <jobids|filter> (kill job)
 
-        mod|set <jobids | filter : > key=value ... (set key=value in jobs matching jobids or filter, return new job info)
+        mod|set <jobids|filter : > key=value ... (set key=value in jobs matching jobids or filter, return new job info)
             if a filter is provided, ':' is used to delimit filter key=value from job key=value
             set a job in any finished state (done,failed,killed) to state='new' to restart job
             if node is not specified when restarting job, node will be cleared.
@@ -60,12 +54,12 @@ def usage():
         conf [key=value] [node]
             get/sends config to directly connected or specified node
 
-    generic options are: 
+    client-options are: 
         address= (default localhost)
         port= (defult 13700)
         refresh= (interval to continuously refresh status until no jobs left)
 
-"""%EXEC_NAME)
+""")
 
 def pretty_print(d): print (json.dumps(d, sort_keys=True, indent=4))
 
@@ -126,11 +120,11 @@ def show(client,args,**kwargs):
                 if 'j' in args:
                     for (jid,job) in sorted(jobs.items(),key=lambda j: (j[1].get('state')) ):
                         flags=''
+                        rc=''
                         if job.get('active'): 
                             flags+='A '
                             if 'start_ts' in job: rc=str(int(job['ts']-job['start_ts']))
-                            else: rc=None
-                        else: rc=job.get('rc')
+                        elif job.get('rc') is not None: rc='(%s)'%job['rc']
                         if job.get('error'): flags+='E '
                         if job.get('hold'): flags+='H '
                         if job.get('restart'): flags+='R '
@@ -143,89 +137,103 @@ def show(client,args,**kwargs):
 # cmd=first non cfg argument
 # args=remaining arguments 
 try:
+    #parse env vars
     cfg,env=cmdline_parser(os.getenv('MEESEEKS_CONF','').split())
+    
+    #handle cmd from symlink to meeseeks-client
+    EXEC_NAME=os.path.basename(sys.argv[0])
+    if EXEC_NAME.startswith('q'):cmd=EXEC_NAME[1:]
+    else: cmd=None
+    
+    #get command line options/args
     args=sys.argv[1:]
     if not cmd:
         c,args=cmdline_parser(args)
         if not args: sys.exit(usage())
         cfg.update(c)
         cmd,args=args[0],args[1:] #end of options
+    
+    #load cfg files
     if 'file' in cfg: cfg.update(read_cfg_files(cfg['file']))
+    
+    #parse post-cmd args
+    kwargs,args=cmdline_parser(args)
+
+    #set logging
     logging.basicConfig(level=cfg.get('log',logging.INFO))
-    logging.debug('%s %s %s'%(cfg,cmd,args))
+    logging.debug('%s %s %s %s'%(cfg,cmd,kwargs,args))
+
     client=Client(**cfg) #create client and connect
-    jids,query=None,{}
+    
     #if we will be refreshing, refresh now until state populated
     if cfg.get('refresh'):
         while not client.get_nodes(): time.sleep(1)
+    jids=None
 
     if cmd.startswith('sub'):
-        #get pool, args and optional node selection
+        #get pool and node selection from kwargs
         pool=jobargs=node=None
-        if 'node' in cfg:
-            node=cfg['node']
-            del cfg['node']
-        if 'pool' in cfg:
-            pool=cfg['pool']
-            del cfg['node']
+        if 'node' in kwargs:
+            node=kwargs['node']
+            del kwargs['node']
+        if 'pool' in kwargs:
+            pool=kwargs['pool']
+            del kwargs['pool']
+        # if no pool in kwargs, get pool@node arg
         elif args: 
             pool=args[0]
             args=args[1:]
-        if pool and '@' in pool:
+        if pool and '@' in pool: 
             pool,node=pool.split('@',1)
-        if node and node.endswith('*'):
-            cfg['filter']=node[:-1]
-            node=None
-        #if we are refreshing on the job, submit locally and let it dispatch
+            if ',' in node: node=node.split(',')
+        #if we are refreshing submit locally and let it dispatch
         if cfg.get('refresh'): jids=[client.submit_job(pool=pool,args=args,node=node,**cfg)]
-        #submit directly and return jid
+        #submit directly
         else: pretty_print(client.submit(pool=pool,args=args,node=node,**cfg))
 
-    else: #if not submit, parse as key=value args and job ids
-        kwargs,args=cmdline_parser(args)
-        if cmd == 'get' or cmd == 'job': #get jobs by ids or filter on key=value
-            if cfg.get('refresh'):
-                if args: jids=args
-                else: jids=True #get all
-            elif args: pretty_print(client.query(ids=args))
-            else: pretty_print(client.query(**kwargs))
+    elif cmd == 'get' or cmd == 'job': #get jobs by ids or filter on key=value
+        if cfg.get('refresh'):
+            if args: jids=args
+            else: jids=True #get all
+        elif args: pretty_print(client.query(ids=args))
+        else: pretty_print(client.query(**kwargs))
 
-        elif cmd == 'set' or cmd == 'mod': #set k=v in matching jobs
-            #kwargs will be set if we have initial k=v args like 'pool=... : key=...' 
-            if kwargs: jids=client.ls(**kwargs) #we were provided a filter
-            else: jids=[arg for arg in args if '=' not in arg] #no filter, we have 'jobid jobid key=...'
-            kwargs,args=cmdline_parser([arg for arg in args if '=' in arg]) #parse following k=v args
-            for jid in jids: client.submit(id=jid,**kwargs) #submit changes 
-            if jids: pretty_print(client.query(ids=jids)) #print changes 
+    elif cmd == 'set' or cmd == 'mod': #set k=v in matching jobs
+        #kwargs will be set if we have initial k=v args like 'pool=... : key=...' 
+        if kwargs: jids=client.ls(**kwargs) #we were provided a filter
+        else: jids=[arg for arg in args if '=' not in arg] #no filter, we have 'jobid jobid key=...'
+        kwargs,args=cmdline_parser([arg for arg in args if '=' in arg]) #parse following k=v args
+        for jid in jids: client.submit(id=jid,**kwargs) #submit changes 
+        if jids: pretty_print(client.query(ids=jids)) #print changes 
 
-        elif cmd == 'ls': pretty_print(client.ls(**kwargs))
+    elif cmd == 'ls': pretty_print(client.ls(**kwargs))
 
-        elif cmd == 'kill' or cmd == 'del': pretty_print(client.kill(args,**kwargs))
+    elif cmd == 'kill' or cmd == 'del': pretty_print(client.kill(args,**kwargs))
 
-        elif cmd == 'nodes': 
-            if cfg.get('refresh'): 
-                while True:
-                    pretty_print(client.get_nodes())
-                    time.sleep(cfg.get('refresh'))
-            else: pretty_print(client.nodes())
+    elif cmd == 'nodes': 
+        if cfg.get('refresh'): 
+            while True:
+                pretty_print(client.get_nodes())
+                time.sleep(cfg.get('refresh'))
+        else: pretty_print(client.nodes())
 
-        elif cmd == 'pools': 
-            if cfg.get('refresh'): 
-                while True:
-                    pretty_print(client.get_pools())
-                    time.sleep(cfg.get('refresh'))
-            else: pretty_print(client.pools())
+    elif cmd == 'pools': 
+        if cfg.get('refresh'): 
+            while True:
+                pretty_print(client.get_pools())
+                time.sleep(cfg.get('refresh'))
+        else: pretty_print(client.pools())
 
-        elif cmd.startswith('conf'): 
-            if 'file' in kwargs: kwargs.update(read_cfg_files(kwargs['file']))
-            if args:
-                for node in args: 
-                    pretty_print(client.submit(pool='__config',node=node,args=kwargs))
-            else: pretty_print(client.request(dict(config=kwargs))) #peer config push
+    elif cmd.startswith('conf'): 
+        if 'file' in kwargs: kwargs.update(read_cfg_files(kwargs['file']))
+        if args:
+            for node in args: 
+                pretty_print(client.submit(pool='__config',node=node,args=kwargs))
+        else: pretty_print(client.request(dict(config=kwargs))) #peer config push
 
-        elif cmd == 'show' or cmd.startswith('stat'): show(client,args,**kwargs) #pretty print full cluster
+    elif cmd == 'show' or cmd.startswith('stat'): show(client,args,**kwargs) #pretty print full cluster
 
-        else: sys.exit(usage())
+    else: sys.exit(usage())
     
     #refreshing on jobs
     if jids and cfg.get('refresh'):
@@ -239,7 +247,7 @@ try:
             if updates: pretty_print(updates)
             seq=dict((jid,job['seq']) for (jid,job) in jobs.items())
             time.sleep(cfg.get('refresh'))
-except Exception as e: raise #print (e,file=sys.stderr)
+except Exception as e: print (e,file=sys.stderr)
 
 #if we were polling state, stop gracefully
 if cfg.get('refresh'): client.close()

@@ -66,23 +66,21 @@ class Pool(threading.Thread):
                 start_count=job['start_count']+1, 
                 **self.__tasks[jid].info
             )
-            self.logger.info('started %s [%s]'%(jid,self.__tasks[jid].name))
+            self.logger.info('task %s started [%s]'%(jid,self.__tasks[jid].name))
         except Exception as e:
             self.logger.warning(e,exc_info=True)
             self.update_job(jid,state='failed',error=str(e))
     
     def kill_job(self,jid,job):
         '''kill running task and wait for task to exit'''
+        task_info={}
         if jid in self.__tasks:
-            self.logger.info('killed %s [%s]'%(jid,self.__tasks[jid].name))
+            self.logger.debug('killing %s [%s]'%(jid,self.__tasks[jid].name))
             task_info=self.__tasks[jid].info
             try:
                 self.__tasks[jid].kill()
                 self.__tasks[jid].join()
             except Exception as e: self.logger.warning(e,exc_info=True)
-        else: 
-            self.logger.info('killed %s'%jid)
-            task_info={}
         return self.update_job(jid,state='killed',**task_info)
 
     def check_job(self,jid,job):
@@ -91,7 +89,7 @@ class Pool(threading.Thread):
         info=self.__tasks[jid].info
         r=self.__tasks[jid].poll()
         if r is not None: #task exited
-            fail_count=job['fail_count']
+            fail_count=job.get('fail_count',0)
             if state == 'running':
                 if r: state='done'
                 else: 
@@ -106,7 +104,7 @@ class Pool(threading.Thread):
                     fail_count=fail_count, 
                     **self.__tasks[jid].info )
             )
-            self.logger.info("job %s %s"%(jid,state))
+            self.logger.info("task %s %s"%(jid,state))
             del self.__tasks[jid] #free the slot
         #was job killed or max runtime
         elif job.get('runtime') and (time.time()-job['start_ts'] > job['runtime']):
@@ -142,13 +140,11 @@ class Pool(threading.Thread):
                     # or failed and retries not exceeded)
                     #  set job active if not
                     #  start job if not on hold and a slot is free
-                    if (job['state'] == 'new') \
-                        or (job['state'] == 'done' and job.get('restart')) \
-                        or (job['state'] == 'failed' and job.get('fail_count') < int(job.get('retries',0)) ):
-                            if not job.get('active'): job=self.update_job(jid,active=True) #claim the job
-                            #do we have a free slot, and is the job not on hold?
-                            if not job.get('hold') and ((self.slots is True) or (len(self.__tasks) < self.slots)):
-                                 self.start_job(jid)
+                    if (job['state'] == 'new' or (job['state'] == 'done' and job.get('restart'))):
+                        if not job.get('active'): job=self.update_job(jid,active=True) #claim the job
+                        #do we have a free slot, and is the job not on hold?
+                        if not job.get('hold') and ((self.slots is True) or (len(self.__tasks) < self.slots)):
+                                self.start_job(jid)
 
                 #check for orphaned tasks. This shouldn't happen but it can if time jumps.
                 for jid in list(self.__tasks.keys()):

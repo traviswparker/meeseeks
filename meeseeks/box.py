@@ -211,9 +211,6 @@ class Box:
                             # or full (slots is < 1) but jobs can wait
                             # or without defined slots (slots is True)
                             nodes=[node for node,free_slots in pool_status.items() if free_slots or self.cfg.get('wait_in_pool')]
-                            
-                            #filter nodes if set
-                            if job.get('filter'): nodes=[node for node in nodes if node.startswith(job['filter'])]
 
                             #if no nodes or job in hold, we can't route this job yet
                             if not nodes or (job.get('hold') and not self.cfg.get('wait_in_pool')):
