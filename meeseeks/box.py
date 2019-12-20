@@ -60,7 +60,9 @@ class Box:
         #set up logger
         self.logger=logging.getLogger(self.name)
 
-    def apply_config(self):
+    def apply_config(self,**cfg):
+        self.logger.info('reloading config')
+        self.cfg.update(cfg)
         #load config defaults
         self.defaults=self.cfg.get('defaults',{})
 

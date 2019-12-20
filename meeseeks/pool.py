@@ -39,14 +39,15 @@ class Pool(threading.Thread):
         self.config(**cfg)
         self.start()
 
-    def config(self,update=30,slots=None,runtime=None,drain=False,**cfg):
+    def config(self,update=30,slots=None,runtime=None,drain=False,hold=False,**cfg):
         self.update=int(update) #how often we update the state of running jobs
         if runtime: self.max_runtime=int(runtime)
         else: self.max_runtime=None
         if slots is not None: #number of job slots (>0:set slots, 0:not defined)
             if slots==0: self.slots=True
             else: self.slots=int(slots) 
-        if drain: self.slots=0 #set free slots to 0 to drain pool
+        if drain: self.slots=0 #set free slots to 0 to avoid new jobs
+        self.hold=hold
 
     def update_job(self,jid,**data):
         '''hook for state.update_job that sets active flag'''
@@ -143,7 +144,7 @@ class Pool(threading.Thread):
                     if (job['state'] == 'new' or (job['state'] == 'done' and job.get('restart'))):
                         if not job.get('active'): job=self.update_job(jid,active=True) #claim the job
                         #do we have a free slot, and is the job not on hold?
-                        if not job.get('hold') and ((self.slots is True) or (len(self.__tasks) < self.slots)):
+                        if not job.get('hold') and not self.hold and ((self.slots is True) or (len(self.__tasks) < self.slots)):
                                 self.start_job(jid)
 
                 #check for orphaned tasks. This shouldn't happen but it can if time jumps.

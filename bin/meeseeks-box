@@ -1,29 +1,31 @@
 #!/usr/bin/env python3
 
 import sys
-import json
 import logging
 import signal
 
-from meeseeks.box import Box
 from meeseeks.util import cmdline_parser, read_cfg_files
+from meeseeks.box import Box
 
-def signal_handler(*args):
+def signal_stop(*args):
     logging.debug(args)
     box.shutdown.set()
 
-cfgargs,args=cmdline_parser(sys.argv[1:])
+def signal_reload(*args):
+    logging.debug(args)
+    box.apply_config(**config())
 
-cfg=read_cfg_files(args)
+def config():
+    cfgargs,args=cmdline_parser(sys.argv[1:])
+    cfg=read_cfg_files(args)
+    cfg.update(cfgargs)
+    logging.basicConfig(**cfg.get('logging',{'level':logging.INFO}))
+    return cfg
 
-cfg.update(cfgargs)
+box=Box(**config())
 
-logging.basicConfig(**cfg.get('logging',{'level':logging.INFO}))
-
-box=Box(**cfg)
-
-signal.signal(signal.SIGINT,signal_handler)
-signal.signal(signal.SIGTERM,signal_handler)
-signal.signal(signal.SIGHUP,signal_handler)
+signal.signal(signal.SIGINT,signal_stop)
+signal.signal(signal.SIGTERM,signal_stop)
+signal.signal(signal.SIGHUP,signal_reload)
 
 box.run()
