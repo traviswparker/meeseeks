@@ -165,17 +165,16 @@ killed: job was killed, rc may be set if job was running.
         if acknowledged and released by node, active=False
 
 # meeseeks-client
+    
+    meeseeks-client [client-options] <command> [args...]
 
-    ./meeseeks-client [options] <command> [args...]
-
-    or use q-symlinks: q{stat|sub|del|mod|get|conf} [args]
+    or use q-symlinks: q{stat|sub|job|del|mod|conf} [args]
 
     commands are:
-        sub <pool[@node]> <executable> [args....] (submits job, returns job info)
-            options for submit:
+        sub [submit-options] <pool[@node]> <executable> [args....] (submits job, returns job info)
+            submit-options:
                 pool= sets pool for job to run in
-                node= sets node for job to run on
-                filter= (only use nodes with names matching this pattern, will also be set if <node> ends with *)
+                node= sets node(s) for job to run on. Can be comma-seperated list or end with * for all/wildcard
                 stdin= stdout= stderr= (redirect job in/out/err to files named)
                 restart= (1=restart when done)
                 retries= (times to retry if job fails)
@@ -184,15 +183,15 @@ killed: job was killed, rc may be set if job was running.
                 state= (change existing job state, 'new' will restart finished job)
                 hold= (1=queue but do not start job)
 
-        get [jobids | filter] (get all or specified job info as JSON)
+        job|get [jobids|filter] (get all or specified job info as JSON)
             jobids are any number of job id arguments
             filter is any job attributes such as node= pool= state=
 
         ls [filter] (list job ids)
 
-        del|kill <jobids | filter> (kill job)
+        del|kill <jobids|filter> (kill job)
 
-        mod|set <jobids | filter : > key=value ... (set key=value in jobs matching jobids or filter, return new job info)
+        mod|set <jobids|filter : > key=value ... (set key=value in jobs matching jobids or filter, return new job info)
             if a filter is provided, ':' is used to delimit filter key=value from job key=value
             set a job in any finished state (done,failed,killed) to state='new' to restart job
             if node is not specified when restarting job, node will be cleared.
@@ -208,7 +207,7 @@ killed: job was killed, rc may be set if job was running.
         conf [key=value] [node]
             get/sends config to directly connected or specified node
 
-    generic options are: 
+    client-options are: 
         address= (default localhost)
         port= (defult 13700)
         refresh= (interval to continuously refresh status until no jobs left)
