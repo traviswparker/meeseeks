@@ -107,6 +107,13 @@ class Pool(threading.Thread):
             )
             self.logger.info("task %s %s"%(jid,state))
             del self.__tasks[jid] #free the slot
+        #job can get stuck in new if it is reset while running, fix the state
+        elif job['state'] == 'new':
+            job.update( 
+                self.update_job( jid, 
+                state='running', 
+                **self.__tasks[jid].info )
+            )
         #was job killed or max runtime
         elif job.get('runtime') and (time.time()-job['start_ts'] > job['runtime']):
             self.logger.warning('job %s exceeded job runtime of %s'%(jid,job['runtime']))
