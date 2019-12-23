@@ -157,13 +157,13 @@ class State(threading.Thread):
             #turn single job id into list
             if ids and type(ids) is not list: ids=[ids]
             #filter by jid list and/or ts/seq greater than
-            #do not return jobs without node unless node query
+            #if we're on a node, do not return jobs without node unless seq/ts/node specified
             # (prevents propagation of unrouted jobs)
             r=dict( (jid,job.copy()) for (jid,job) in self.__jobs.items() if \
                     (jid in ids) or ( not ids \
                         and (not ts or job['ts']>ts) \
                         and (not seq or job['seq']>seq) \
-                        and (job['node'] or 'node' in query) ) )
+                        and (not self.node or job['node'] or 'node' in query) ) )
             for (k,v) in query.items(): #filter by arbitrary criteria
                 r=dict((jid,job) for (jid,job) in r.items() if job.get(k)==v)
             return r
@@ -233,7 +233,7 @@ class State(threading.Thread):
                 jobargs=dict((k,v) for (k,v) in jobargs.items() if (v is not None) and (k in self.JOB_SPEC))
 
                 #handle multi-node spec
-                if 'node' in jobargs: 
+                if jobargs.get('node'):
                     nodes=jobargs['node']
                     del jobargs['node']
                     if type(nodes) is not list: #if nodes is already a list of nodenames, use it
@@ -273,6 +273,7 @@ class State(threading.Thread):
                             if 'pool' in jobargs: del jobargs['pool']
                     else: #this is a new job
                         if not jobargs.get('pool'): return {jid:False} #jobs have to have a pool to run in
+                        if 'state' in jobargs: del jobargs['state'] #new jobs can't have a state
                         job={  
                                 'submit_ts':time.time(),    #submit timestamp
                                 'node':jobargs.get('node',False),               #no node assigned unless jobargs set one
@@ -282,7 +283,6 @@ class State(threading.Thread):
                                 'fail_count':0
                             }
                     job.update(**jobargs)
-                    #if not job.get('node'): job['node']=self.node #set job to be handled/routed by this node
                     self.__update_job(jid,**job)
                     r[jid]=job.copy()
 
