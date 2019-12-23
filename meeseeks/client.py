@@ -111,7 +111,10 @@ class Job():
     '''Job-based API to Meeseeks
     job info is be available as Job attributes. ex: Job.state, Job.rc
     these attributes at kept in sync with the actual jobs
-    Job.info can be used to read the cached job state without refreshing'''
+    Job.info can be used to read the cached job without refreshing'''
+
+    JOB_INACTIVE=State.JOB_INACTIVE
+    JOB_INACTIVE.append(False) #special case for us, if a job no longer exists
 
     def __init__(self,*args,**kwargs):
         '''create a job spec and a client if not already connected
@@ -137,7 +140,7 @@ class Job():
             self.__dict__['client']=_CLIENT
         while not self.client.get_nodes(): time.sleep(1)
 
-        #set the self.info attrubute
+        #set the self.info attrubute, this will be the cache of job state
         if args: kwargs.update(args=list(args))
         self.__dict__['info']=dict((k,v) for (k,v) in kwargs.items() if k in State.JOB_SPEC)
 
@@ -147,28 +150,33 @@ class Job():
                 self.__dict__['multi']=True
 
     def __getattr__(self,attr=None):
-        #refresh the job(s) state and return the attribute
+        '''refresh the job(s) and return the attribute'''
         if not self.jid: return False
         jobs=self.client.get(self.jid)
         if self.multi:
-            for jid,job in jobs.items(): self.info.setdefault(jid,{}).update(job)
-            if attr is not None: return dict((jid,job[attr]) for (jid,job) in self.info.items())
-        else: self.info.update(jobs[jid])
+            for jid in self.jid:
+                if jid in jobs: self.info.setdefault(jid,{}).update(jobs[jid])
+                else: self.info.setdefault(jid,{}).update(state=False) #job expired before we checked it 
+            if attr is not None: return dict((jid,job.get(attr)) for (jid,job) in self.info.items())
+        elif jid in jobs: self.info.update(jobs[jid])
+        else: self.info.update(state=False)
         if attr is not None: return self.info.get(attr)
 
     def __setattr__(self,attr,value):
-        #set attr=value in the job(s) and submit to the client
+        '''set attr=value in the job(s) and submit to the client'''
+        self.__getattr__() #sync cache first to make sure job exists
         if self.multi:
             if self.jid:
                 for jid in self.jid:
-                    self.info[jid][attr]=value
-                    self.info[jid]['id']=jid #set id to modify existing job
-                    self.client.submit_job(**self.info[jid]) #submit modified job
-        else: 
+                    if self.info[jid]['state']:
+                        self.info[jid][attr]=value
+                        self.info[jid]['id']=jid #set id to modify existing job
+                        self.client.submit_job(**self.info[jid]) #submit modified job
+        elif self.info['state']:
             self.info[attr]=value
             self.info['id']=self.jid
             self.client.submit_job(**self.info)
-        self.__getattr__() #sync state
+        self.__getattr__() #sync cache again
         
     def start(self):
         '''start the job(s) by submitting it to the client
@@ -176,25 +184,30 @@ class Job():
         if self.jid: return False #job already started
         r=list(self.client.submit_job(**self.info).keys())
         if self.multi:
-            self.__dict__['info']={} #clean non-jid keys 
+            self.__dict__['info']={} #clear cache to remove submit data
             self.__dict__['jid']=r
         else: self.__dict__['jid']=r[0]
-        self.__getattr__() #sync state
+        self.__getattr__() #sync cache
         return self.jid
     
     def kill(self):
         '''stop running job(s)'''
         self.client.kill_jobs(self.jid)
-        self.__getattr__()
+        self.__getattr__() #refresh cache
+
+    def is_alive(self):
+        '''returns True if job (or if multi, any jobs) have not finished'''
+        if self.multi: return any((state not in self.JOB_INACTIVE) for (jid,state) in self.state.items())
+        else: return self.active
 
     def poll(self):
-        '''returns info if a job finished, none if running
+        '''returns info if a job finished, None if running
         if multi, returns finished jobs or empty dict if none'''
         if self.multi: 
-            self.__getattr__()
-            return dict((jid,job) for (jid,job) in self.info.items() if not job.get('active'))
+            self.__getattr__() #refresh cache
+            return dict((jid,job) for (jid,job) in self.info.items() if (job['state'] in self.JOB_INACTIVE))
         else:
-            if self.active: return None #refresh and get active flag
+            if self.state in self.JOB_INACTIVE: return None #refresh and get active flag
             else: return self.info
 
 
