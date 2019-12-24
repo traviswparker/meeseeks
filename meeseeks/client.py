@@ -6,7 +6,6 @@ import logging
 
 from .state import State
 from .node import Node
-from .util import cmdline_parser
 
 '''
 Provides request-based and job-based APIs
