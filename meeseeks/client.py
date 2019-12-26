@@ -31,9 +31,16 @@ j.start_ts #check when it started
 j.restart=True #set job to restart on exit
 j.poll() #check if it finished or failed
 j.kill() #kill the job
+
+#callback on job exit:
+def callback(j):
+    exited=j.poll()
+    ...
+
+j=Job(cmd,args...,track=True,notify=callback) #create tracked Job object, auto-connect to cluster
+j.pool='p1' #set the pool
+j.start() #submit the job
 '''
-
-
 class Client(State):
     '''client class to connect to a node and manage the state of it and all downstream nodes.
         Client methods are available to make direct requests
@@ -60,7 +67,6 @@ class Client(State):
         #set the global client
         global _CLIENT
         if set_global: _CLIENT=self
-
 
     #direct request methods
     
@@ -100,6 +106,49 @@ class Client(State):
         self.join()
 
 
+global _TRACK
+class Track(threading.Thread):
+    '''keeps running Job objects tracked with the client
+    calls the function set in Job.notify when job finishes'''
+    def __init__(self):
+        self.__jobs=set()
+        self.__lock=threading.Lock()
+        self.logger=logging.getLogger(name='Track')
+        threading.Thread.__init__(self,daemon=True)
+        self.start()
+
+    def run(self):
+        self.logger.debug('%s started'%self.name)
+        while True:
+            with self.__lock:
+                for job in self.__jobs:
+                    exited=job.poll() #if job(s) exited
+                    if exited:
+                        #if single job, get id
+                        if not job.multi: exited=[job.jid] 
+                        #for each exited job, notify and mark as notified
+                        for jid in exited:
+                            if job.notify and jid not in job.exited:
+                                self.logger.debug('%s notify'%jid)
+                                job.notify(job) #callback with job object
+                                job.exited.add(jid)
+                        if not job.is_alive(): #if multi some jobs may still be alive
+                            self.logger.debug('removing %s'%job)
+                            self.__jobs.remove(job)
+                            break #set size changed
+            time.sleep(1)
+
+    def add(self,job):
+        self.logger.debug('adding %s'%job)
+        with self.__lock: self.__jobs.add(job)
+
+    def remove(self,job):
+        self.logger.debug('removing %s'%job)
+        with self.__lock: 
+            if job in self.__jobs: self.__jobs.remove(job)
+_TRACK=Track()
+
+
 #global client object for Job
 global _CLIENT
 _CLIENT=None
@@ -112,8 +161,7 @@ class Job():
     these attributes at kept in sync with the actual jobs
     Job.info can be used to read the cached job without refreshing'''
 
-    JOB_INACTIVE=State.JOB_INACTIVE
-    JOB_INACTIVE.append(False) #special case for us, if a job no longer exists
+    JOB_ALIVE=['new','running'] #jobs in these states are tracked
 
     def __init__(self,*args,**kwargs):
         '''create a job spec and a client if not already connected
@@ -123,30 +171,33 @@ class Job():
     the Job instance is passed the job spec as keyword args, and treats any positional args as job args
     example: job=Job('sleep','1000',pool='p1')
 
-    
+    Job objects are kept in sync with the client by the Track thread if created with arg track=True
+    Tracked jobs will call the function set with arg notify=<function> when the job (or any subjobs) exit
     '''
         #set attrubutes
-        #we do this via the __dict__ reference to bypass self.__setattr__
-        self.__dict__['jid']=None #job id or list of job IDs from submit
-        self.__dict__['multi']=False #multinode job, job atttributes will be id:value mappings vs
+        self.jid=None #job id or list of job IDs from submit
+        self.multi=False #multinode job, job atttributes will be id:value mappings vs
 
         #create/use the global client if we don't have one
         global _CLIENT,_CLIENT_CONF
         client=kwargs.get('client')
-        if client: self.__dict__['client']=client
+        if client: self.client=client
         else:
             if not _CLIENT: _CLIENT=Client(**_CLIENT_CONF)
-            self.__dict__['client']=_CLIENT
+            self.client=_CLIENT
         while not self.client.get_nodes(): time.sleep(1)
+        self.track=kwargs.get('track')
+        self.notify=kwargs.get('notify')
+        self.exited=set() #jobs we have notified about, to avoid callback loop
 
         #set the self.info attrubute, this will be the cache of job state
         if args: kwargs.update(args=list(args))
-        self.__dict__['info']=dict((k,v) for (k,v) in kwargs.items() if k in State.JOB_SPEC)
+        self.info=dict((k,v) for (k,v) in kwargs.items() if k in State.JOB_SPEC)
 
         #detect multi-submit job
         if 'node' in self.info and \
             (type(self.info.get('node')) is list or self.info['node'].endswith('*')):
-                self.__dict__['multi']=True
+                self.multi=True
 
     def __getattr__(self,attr=None):
         '''refresh the job(s) and return the attribute'''
@@ -157,25 +208,27 @@ class Job():
                 if jid in jobs: self.info.setdefault(jid,{}).update(jobs[jid])
                 else: self.info.setdefault(jid,{}).update(state=False) #job expired before we checked it 
             if attr is not None: return dict((jid,job.get(attr)) for (jid,job) in self.info.items())
-        elif jid in jobs: self.info.update(jobs[jid])
+        elif self.jid in jobs: self.info.update(jobs[self.jid])
         else: self.info.update(state=False)
         if attr is not None: return self.info.get(attr)
 
     def __setattr__(self,attr,value):
         '''set attr=value in the job(s) and submit to the client'''
-        self.__getattr__() #sync cache first to make sure job exists
-        if self.multi:
-            if self.jid:
-                for jid in self.jid:
-                    if self.info[jid]['state']:
-                        self.info[jid][attr]=value
-                        self.info[jid]['id']=jid #set id to modify existing job
-                        self.client.submit_job(**self.info[jid]) #submit modified job
-        elif self.info['state']:
-            self.info[attr]=value
-            self.info['id']=self.jid
-            self.client.submit_job(**self.info)
-        self.__getattr__() #sync cache again
+        if attr in State.JOB_SPEC:
+            self.__getattr__() #sync cache first to make sure job exists
+            if self.multi:
+                if self.jid:
+                    for jid in self.jid:
+                        if self.info[jid]['state']:
+                            self.info[jid][attr]=value
+                            self.info[jid]['id']=jid #set id to modify existing job
+                            self.client.submit_job(**self.info[jid]) #submit modified job
+            elif self.info['state']:
+                self.info[attr]=value
+                self.info['id']=self.jid
+                self.client.submit_job(**self.info)
+            self.__getattr__() #sync cache again
+        else: self.__dict__[attr]=value #pass through to object attributes
         
     def start(self):
         '''start the job(s) by submitting it to the client
@@ -183,36 +236,32 @@ class Job():
         if self.jid: return False #job already started
         r=list(self.client.submit_job(**self.info).keys())
         if self.multi:
-            self.__dict__['info']={} #clear cache to remove submit data
-            self.__dict__['jid']=r
-        else: self.__dict__['jid']=r[0]
+            self.info={} #clear cache to remove submit data
+            self.jid=r
+        else: self.jid=r[0]
         self.__getattr__() #sync cache
+        global _TRACK
+        if self.track: _TRACK.add(self)
         return self.jid
     
     def kill(self):
         '''stop running job(s)'''
         self.client.kill_jobs(self.jid)
         self.__getattr__() #refresh cache
+        global _TRACK
+        if self.track: _TRACK.remove(self)
 
     def is_alive(self):
         '''returns True if job (or if multi, any jobs) have not finished'''
-        if self.multi: return any((state not in self.JOB_INACTIVE) for (jid,state) in self.state.items())
-        else: return self.active
+        if self.multi: return any(state in self.JOB_ALIVE for (jid,state) in self.state.items())
+        else: return self.state in self.JOB_ALIVE
 
     def poll(self):
         '''returns info if a job finished, None if running
         if multi, returns finished jobs or empty dict if none'''
         if self.multi: 
             self.__getattr__() #refresh cache
-            return dict((jid,job) for (jid,job) in self.info.items() if (job['state'] in self.JOB_INACTIVE))
+            return dict((jid,job) for (jid,job) in self.info.items() if (job['state'] not in self.JOB_ALIVE))
         else:
-            if self.state in self.JOB_INACTIVE: return None #refresh and get active flag
+            if self.state in self.JOB_ALIVE: return None #refresh and get active flag
             else: return self.info
-
-
-
-
-
-
-
-
