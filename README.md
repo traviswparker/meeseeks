@@ -113,8 +113,7 @@ example:
                         #if an existing job id is given, the job will be modified if possible
         "pool": string #pool name, REQUIRED.
         "args": [executable, arg, arg, arg] #The command to run and arguments. If subprocess.Popen likes it, it will work.
-        "node": node #optional. Strict node selection. Job will fail if node unavailable.
-        "filter": string #optional. Filter node selection to names containing this pattern.
+        "node": string #optional. Node selection, can be * for all in pool or end with * for wildcard
         "stdin": path #path to file to use for the job's stdin
         "stdout": path #optional, path to file to use for the job's stdout else stdout_data returns the base64 encoded output
         "stderr": path #optional, path to file to use for the job's stderr else stderr_data returns the base64 encoded output
@@ -126,10 +125,27 @@ example:
                                       # these jobs will be failed. If resries is set they will be retried.
                                       # if a nodelist is provided, the job will be reassigned to the first node in the list
                                       # else, the job will wait for the assigned node
+        "state": {new|killed}    #set state of job, killed will stop running job, new will restart finished job
       }
         response will be:
         {
-            "submit": the job_id, or false if submission failed 
+            "submit": the job_id:job or false if submission failed 
+            job attributes (also includes keys from submit spec):
+                node: the node the job is assigned to
+                state: the job state (new,running,done,failed,killed)
+                active: True if the job is being processed by a node.
+                        To move a job: kill the job, wait for active=False, then reassign and set state='new'.
+                rc: exit code if job done/failed
+                error: error details if job did not spawn or exit
+                stdout: base64 encoded stdout after exit if not redirected to a file
+                stdout: base64 encoded stderr after exit if not redirected to a file
+                ts: update timestamp
+                seq: sync sequence number. Jobs with the highest seq are most recently updated on this node.
+                submit_ts: submit timestamp
+                start_ts: job start timestamp
+                end_ts: job end timestamp
+                start_count: count of time job has started
+                fail_count: count of times job has failed
         } 
 
       "query": job_id
@@ -207,7 +223,7 @@ killed: job was killed, rc may be set if job was running.
         conf [key=value] [node]
             get/sends config to directly connected or specified node
 
-    client-options are: 
+    client-options can be set by the environment var MEESEEKS_CONF and default to: 
         address= (default localhost)
         port= (defult 13700)
         refresh= (interval to continuously refresh status until no jobs left)

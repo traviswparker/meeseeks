@@ -22,6 +22,7 @@ class State(threading.Thread):
                       job will be reassigned to the start of the nodelist if provided
             runtime: job maximum runtime in seconds
             hold: if true, job will not run until cleared
+            config: job task configuration dict. for Task spawned by Pool, sets popen args.
 
         job attributes:
             node: the node the job is assigned to
@@ -55,7 +56,8 @@ class State(threading.Thread):
                 'restart',
                 'retries',
                 'runtime',
-                'hold'
+                'hold',
+                'config'
             ]
 
     #states of inactive jobs

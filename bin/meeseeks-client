@@ -54,7 +54,7 @@ def usage():
         conf [key=value] [node]
             get/sends config to directly connected or specified node
 
-    client-options are: 
+    client-options can be set by the environment var MEESEEKS_CONF and default to: 
         address= (default localhost)
         port= (defult 13700)
         refresh= (interval to continuously refresh status until no jobs left)
@@ -138,7 +138,7 @@ def show(client,args,**kwargs):
 # args=remaining arguments 
 try:
     #parse env vars
-    cfg,env=cmdline_parser(os.getenv('MEESEEKS_CONF','').split())
+    cfg=cmdline_parser(os.getenv('MEESEEKS_CONF','').split()[0])
     
     #handle cmd from symlink to meeseeks-client
     EXEC_NAME=os.path.basename(sys.argv[0])

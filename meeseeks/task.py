@@ -30,6 +30,7 @@ class Task(threading.Thread):
     '''subprocess manager'''        
     def __init__(self,job):
         popen_args={}
+        popen_args.update(job.get('config',{})) #add config if any
         self.info={} #info to update job
         self.stdin=self.stdout=self.stderr=None #file handles if redirecting
         self.stdout_data=self.stderr_data=None #output if capturing
