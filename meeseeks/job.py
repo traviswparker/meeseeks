@@ -9,11 +9,11 @@ from .state import State
 from .client import Client
 from .util import cmdline_parser
 
-global _CLIENT, _CLIENT_CONF
+global _CLIENT, _CLIENT_CONF, _NOTIFY
 #default global client conf
 _CLIENT_CONF=dict( refresh=10 )
 _CLIENT_CONF.update(cmdline_parser(os.getenv('MEESEEKS_CONF','').split())[0])
-_CLIENT=None
+_CLIENT=_NOTIFY=None
 
 class Job():
     '''Job-based API to Meeseeks
@@ -100,7 +100,7 @@ class Job():
         if self.notify is not None:
             global _NOTIFY
             if not _NOTIFY: _NOTIFY=Notify()
-             _NOTIFY.add(self)
+            _NOTIFY.add(self)
         return self.jid
     
     def kill(self):
