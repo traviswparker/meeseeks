@@ -37,7 +37,7 @@ def callback(j):
     exited=j.poll()
     ...
 
-j=Job(cmd,args...,track=True,notify=callback) #create tracked Job object, auto-connect to cluster
+j=Job(cmd,args...,notify=callback) #create tracked Job object, auto-connect to cluster
 j.pool='p1' #set the pool
 j.start() #submit the job
 '''
@@ -186,7 +186,7 @@ class Job():
             if not _CLIENT: _CLIENT=Client(**_CLIENT_CONF)
             self.client=_CLIENT
         while not self.client.get_nodes(): time.sleep(1)
-        self.track=kwargs.get('track')
+        self.track=kwargs.get('track',True)
         self.notify=kwargs.get('notify')
         self.exited=set() #jobs we have notified about, to avoid callback loop
 
