@@ -23,6 +23,7 @@ class State(threading.Thread):
             runtime: job maximum runtime in seconds
             hold: if true, job will not run until cleared
             config: job task configuration dict. for Task spawned by Pool, sets popen args.
+            tags: list of tags, can be matched in query with tag=
 
         job attributes:
             node: the node the job is assigned to
@@ -57,7 +58,8 @@ class State(threading.Thread):
                 'retries',
                 'runtime',
                 'hold',
-                'config'
+                'config',
+                'tags'
             ]
 
     #states of inactive jobs
@@ -154,19 +156,21 @@ class State(threading.Thread):
     def get(self,ids=[],ts=None,seq=None,**query):
         '''dump a list of jobs or all jobs for a node/pool/state/or updated after a certain ts/seq'''
         with self.__lock: return self.__get(ids,ts,seq,**query)
-    def __get(self,ids=[],ts=None,seq=None,**query):
+    def __get(self,ids=[],ts=None,seq=None,tag=None,**query):
         try: 
             #turn single job id into list
             if ids and type(ids) is not list: ids=[ids]
             #filter by jid list and/or ts/seq greater than
+            #filter by tag in tags if specified
             #if we're on a node, do not return jobs without node unless seq/ts/node specified
             # (prevents propagation of unrouted jobs)
             r=dict( (jid,job.copy()) for (jid,job) in self.__jobs.items() if \
                     (jid in ids) or ( not ids \
                         and (not ts or job['ts']>ts) \
                         and (not seq or job['seq']>seq) \
+                        and (not tag or tag in job['tags']) \
                         and (not self.node or job['node'] or 'node' in query) ) )
-            for (k,v) in query.items(): #filter by arbitrary criteria
+            for (k,v) in query.items(): #filter by other criteria
                 r=dict((jid,job) for (jid,job) in r.items() if job.get(k)==v)
             return r
         except Exception as e: self.logger.warning(e,exc_info=True)
@@ -240,7 +244,6 @@ class State(threading.Thread):
                     del jobargs['node']
                     if type(nodes) is not list: #if nodes is already a list of nodenames, use it
                         if nodes.endswith("*"): #wildcard specified
-                            if not jobargs.get('pool'): return {jid:False} #jobs have to have a pool to run in
                             #get all nodes in the pool matching the pattern. 
                             nodes=[ node for node in \
                                     self.__get_pools().get(jobargs['pool'],{}).keys() \
@@ -282,7 +285,8 @@ class State(threading.Thread):
                                 'submit_node':jobargs.get('node',False),        #node job was submitted to, we reset to this
                                 'state':'new',
                                 'start_count':0,             
-                                'fail_count':0
+                                'fail_count':0,
+                                'tags':[]
                             }
                     job.update(**jobargs)
                     self.__update_job(jid,**job)

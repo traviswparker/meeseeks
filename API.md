@@ -16,7 +16,8 @@
         restart: false|true    #if true, job will be restarted on the same node if it exits with success (rc == 0)
         retries: int           #if >0, job will be restarted a max of retries if it exits with failure (rc != 0)
         config: dict           #pool/task-specific configuration (default sets Popen arguments)
-        state: new|killed}     #set state of job, killed will stop running job, new will restart finished job.
+        tags: list             #list of tags, can be matched in query with tag=
+        state: new|killed      #set state of job, killed will stop running job, new will restart finished job.
     }
     jobinfo is submitted jobargs plus attributes:
         node: the node the job is assigned to

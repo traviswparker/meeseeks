@@ -126,6 +126,7 @@ example:
                                       # if a nodelist is provided, the job will be reassigned to the first node in the list
                                       # else, the job will wait for the assigned node
         "state": {new|killed}    #set state of job, killed will stop running job, new will restart finished job
+        "tags": [...]            #list of tags, can be matched in query with tag=
       }
         response will be:
         {
@@ -198,10 +199,11 @@ killed: job was killed, rc may be set if job was running.
                 id= (set new job's id or submit changes to existing job)
                 state= (change existing job state, 'new' will restart finished job)
                 hold= (1=queue but do not start job)
+                tags= list of tags, can be matched in query with tag=
 
         job|get [jobids|filter] (get all or specified job info as JSON)
             jobids are any number of job id arguments
-            filter is any job attributes such as node= pool= state=
+            filter is any job attributes such as tag= node= pool= state=
 
         ls [filter] (list job ids)
 
