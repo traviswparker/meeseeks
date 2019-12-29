@@ -69,7 +69,7 @@ class Pool(threading.Thread):
             )
             self.logger.info('task %s started [%s]'%(jid,self.__tasks[jid].name))
         except Exception as e:
-            self.logger.warning(e,exc_info=True)
+            self.logger.warning(e)
             self.update_job(jid,state='failed',error=str(e))
     
     def kill_job(self,jid,job):

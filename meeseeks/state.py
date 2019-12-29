@@ -331,7 +331,7 @@ class State(threading.Thread):
                     #scan for jobs to retry
                     for jid,job in self.__jobs.items():
                         #if we retry on fail, reset the job to inactive/new and assign to the submit node
-                        if job['state'] == 'failed' and job.get('fail_count') <= job.get('retries',0):
+                        if job['state'] == 'failed' and job.get('retries') and job.get('fail_count') <= job.get('retries',0):
                             self.logger.info('retry job %s (%s/%s)'%(jid,job.get('fail_count'),job.get('retries')))
                             self.__update_job(jid,state='new',active=False,node=job.get('submit_node',False))
 
