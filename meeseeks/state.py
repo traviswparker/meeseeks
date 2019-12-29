@@ -171,7 +171,10 @@ class State(threading.Thread):
                         and (not tag or tag in job['tags']) \
                         and (not self.node or job['node'] or 'node' in query) ) )
             for (k,v) in query.items(): #filter by other criteria
-                r=dict((jid,job) for (jid,job) in r.items() if job.get(k)==v)
+                if type(v) is str and v.endswith('*'): #wildcard on string attrs
+                    r=dict((jid,job) for (jid,job) in r.items() if \
+                        type(job.get(k)) is str and job.get(k).startswith(v[:-1]))
+                else: r=dict((jid,job) for (jid,job) in r.items() if job.get(k)==v)
             return r
         except Exception as e: self.logger.warning(e,exc_info=True)
         return None
