@@ -165,9 +165,16 @@ class Box:
             if not self.listener:
                 lcfg=self.defaults.copy()
                 lcfg.update(self.cfg.get('listen',{})) #merge in listener specifc options
-                self.listener=RequestListener( (  lcfg.get('address','localhost'),
-                                                    lcfg.get('port',13700)   ), 
-                                                RequestHandler)
+                port,address,prefix=lcfg.get('port',13700),lcfg.get('address'),lcfg.get('prefix')
+                #if we are given a prefix instead of an address
+                #find the address that matches the prefix and listen on it
+                if not address:
+                    address='localhost'
+                    if prefix:
+                        addrs=(t[4][0] for t in socket.getaddrinfo(socket.gethostname(),port))
+                        for addr in addrs:
+                            if addr.startswith(prefix): address=addr
+                self.listener=RequestListener((address,port),RequestHandler)
                 if 'ssl' in lcfg: self.listener.ssl_context=create_ssl_context(lcfg['ssl'])
                 self.listener.handler=self
                 self.listener.server_thread=threading.Thread(target=self.listener.serve_forever)
