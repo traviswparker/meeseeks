@@ -266,18 +266,21 @@ def apply_config(**cfg):
     #stop/start watch threads
     watch=cfg.get('watch',{})
     for w in WATCH.copy(): 
-        if w not in watch:
-            wt=WATCH[w]
-            wt.shutdown.set()
-            logging.info('stopping %s'%watch.name)
-            wt.join()
-            del WATCH[w]
+        if w not in watch: stop_watch(w)
     for w in watch.keys():
         if w not in WATCH:
             wcfg=defaults.copy()
             wcfg.update(watch[w])
             logging.info('adding watch %s'%w)
             WATCH[w]=Watch(w,**wcfg)
+
+def stop_watch(w):
+    global WATCH
+    wt=WATCH[w]
+    wt.shutdown.set()
+    logging.info('stopping %s'%wt.name)
+    wt.join()
+    del WATCH[w]
 
 def signal_stop(*args):
     global SHUTDOWN
@@ -337,8 +340,4 @@ while not SHUTDOWN.is_set():
     else: time.sleep(1)
 
 #shut down all watches
-for w in WATCH.values():
-    w.shutdown.set()
-    w.join()
-
-sys.exit()
+for w in list(WATCH.keys()): stop_watch(w)
