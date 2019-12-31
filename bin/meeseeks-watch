@@ -1,0 +1,344 @@
+#!/usr/bin/env python3
+
+import sys
+import logging
+import signal
+import os
+import time
+import threading
+import json 
+import glob
+
+from meeseeks import Client,Job
+from meeseeks.util import cmdline_parser, read_cfg_files
+
+def usage():
+
+    print("""
+    
+    meeseeks-watch [key=value]... [config-file]
+
+    watches files, submits jobs on them
+
+    JSON config format, can also be specified on command line as key.subkey..=value|value,value
+
+    {
+        "defaults" : { ... defaults for all other sections ... }
+
+        "client" : { ... configuration for connecting to meeseeks ... }
+
+        "watch" : {
+                    <name>: { 
+                                "path" : <path to watch>
+                                "glob" : <pattern> | [ <pattern>, ... ]
+                                         Watches the files matching the pattern. 
+                                         A list of patterns can be specified to watch multiple lists of files
+                                "reverse" : <bool> (files are ASCII sorted Z->A, 9->0 to handle datestamps newest to oldest. 
+                                                    If true, reverse sort the files (oldest to newest))
+                                "split" : <character> (optional character to split filenames on to generate match parts)
+                                "match" : <int> match partial filenames across lists to create filesets
+                                            a fileset is complete when the first <int> parts of a filename in each list matches.
+                                            files will not be processed until a complete fileset exists. 
+                                            For example,
+                                             glob: [*.foo,*.bar,*.baz]
+                                             split: .
+                                             match: 2
+                                             the set will be complete if we have 20200101.00.foo, 20200101.00.bar, 20200101.00.baz
+                                          default is 0 (no filesets matching)
+                                "updated" : <bool> if set, files will be reprocessed if modtime changes. Default false.
+                                "min_age" : <int> if set, file must be at least <int> seconds old to be considered
+                                "max_age" : <int> if set, file must be newer than <int> seconds to be considered
+                                "max_index": <int> if set, maximum index down the list we will submit jobs for.
+                                "refresh" : <int> interval in seconds running jobs are checked and file status updated, default 10
+                                "rescan"  : <int> interval in seconds files in path are rescanned, default 60
+
+                                "jobs" : [
+                                    { jobspec } | [ {jobspec}, ... ] ,
+                                        jobspec(s) to submit on first (usually newest) file/fileset
+                                    ,   
+                                        {} | [{},...]
+                                        jobspec(s) to submit on next file/fileset...
+                                    , ..... ,
+                                        {} | [{},...]
+                                        last jobspec(s) in list will be submitted on all other unprocessed files
+                                ]
+
+                                if only one job is defined, this job will be run on all files
+                                if multiple jobs are defined, files will have the jobs run on them in sequence as more files appear
+                                for example, when a new file[0] appears:
+                                    jobs[0] will run on new file[0]
+                                    previously processed file[0] will now be file[1], so jobs[1] will run on it
+                                    file[1] will now be file[2] but if jobs[2] does not exist nothing happens.
+
+                                if a job is a list of jobspecs:
+                                    the first jobspec will be submitted for files from the first list,    
+                                    the second jobspec for the second list, and so on.
+                                    files with no associated jobspec or an empty/null jobspec will be immediately marked as processed
+        
+                                in jobspecs, the following formats are available for strings:
+                                    %(name)s        name of this watch
+                                    %(filename)s    filename
+                                    %(file)s        full path to file including filename
+                                    %(<n>)s         part <n> of the filename (if split set)
+                                    %(<k>)s         key <k> in the watch config
+
+                                When a file job is exits, the job result JSON is written to a hidden file in <path> named:
+                                ._<name>_<n>_<file>.<state>
+                                <name> is the name of the watch
+                                <n> is the index of the job in the jobspec list (0=jobspec for first, etc.. )
+                                <file> is the filename
+                                <state> is the finished job state, typically "done" if successful. 
+                                        If a .done file exists the file is considered processed
+
+                                If updated=True, last file mtime is tracked in ._<name>_<n>_<file>.mtime
+
+                                hidden ._ files will be deleted when associated files are deleted, unless cleanup=0
+                    } 
+        }
+    }
+""")
+
+
+class Watch(threading.Thread):
+    '''meeseeks-watch file watcher thread'''
+    def __init__(self,name,**cfg):
+        self.jobs={} #map of jid to [file,job object]
+        self.files={} #map of glob -> files matching
+        self.cfg=cfg
+        self.cfg.update(name=name)
+        self.path=self.cfg['path']
+        self.logger=logging.getLogger(name)
+        self.shutdown=threading.Event()
+        threading.Thread.__init__(self,name=name)
+        self.refresh=int(cfg.get('refresh',10))
+        self.rescan=int(cfg.get('rescan',60))/self.refresh
+        self.start()
+
+    def set_file_status(self,index,file,job):
+        self.logger.debug('set %s %s %s'%(index,file,job))
+        with open(os.path.join(self.path,'._%s_%s_%s.%s'%(self.name,index,file,job['state'])),'w') as fp: 
+            json.dump(job,fp,sort_keys=True,indent=4)
+        if self.cfg.get('updated'): #save mtime
+            try:
+                with open(os.path.join(self.path,'._%s_%s_%s.%s'%(self.name,index,file,'mtime')),'w') as fp:
+                    fp.writelines((str(os.stat(file).st_mtime)))
+            except: pass
+
+    def check_file_status(self,index,file,status='done'):
+        if '%s_%s'%(index,file) in self.jobs: return True #is running
+        elif os.path.exists(os.path.join(self.path,'._%s_%s_%s.%s'%(self.name,index,file,status))): 
+            if not self.cfg.get('updated'): return True #is done
+            #check file mtime against saved mtime
+            try:
+                with open(os.path.join(self.path,'._%s_%s_%s.%s'%(self.name,index,file,'mtime'))) as fp:
+                    mtime=float(fp.readline())
+                if mtime != os.stat(file).st_mtime: return False #file has been updated
+            except: pass #no saved mtime, consider done
+            return True
+        return False #not processed
+
+    def start_file_job(self,index,lindex,file,fparts):
+        #index is jobspec  index
+        #lindex is jobspec list index (usually 0)
+        #file is filename, fparts is filename as parts
+        jobspec=self.cfg['jobs'][index] #get jobspec(s) at index
+        if jobspec:
+            if type(jobspec) is not list: jobspec=[jobspec] #make single jobspec a list
+            self.logger.info('starting job[%s,%s] for %s'%(index,lindex,file))
+            if len(jobspec)>lindex: #jobspec for this lindex exists
+                jobspec=jobspec[lindex]
+                if jobspec:
+                    jobspec=jobspec.copy() #don't modify configured spec
+                    c=self.cfg.copy() #get watch config
+                    #add in file
+                    c.update(filename=file,file=os.path.join(self.path,file))
+                    #add in filename parts
+                    c.update((str(i),p) for (i,p) in enumerate(fparts))
+                    #do format string subs
+                    for k,v in jobspec.items():
+                        if type(v) is str: jobspec[k]=v%c
+                        elif type(v) is list: jobspec[k]=[e%c for e in v]
+                    self.logger.debug(jobspec)
+                    global CLIENT
+                    job=Job(client=CLIENT,**jobspec)
+                    if job.start(): 
+                        self.jobs['%s_%s'%(index,file)]=job
+                        return True
+                    else: 
+                        self.logger.warning(job)
+                        return False
+        else: index=0 #use index 0 if no jobspecs so file can be marked
+        #no job started
+        self.set_file_status(self,index,file,{'state':'done','skipped':True}) #no job, mark file as skipped
+
+    def rescan_files(self,g):
+        #rescans path
+        logging.debug('rescanning %s for %s'%(self.path,g))
+        minage,maxage=self.cfg.get('min_age'),self.cfg.get('max_age')
+        pathglob=os.path.join(self.path,g)
+        files=[]
+        fg=(os.path.split(f)[1] for f in glob.iglob(pathglob))
+        #filter by age
+        if minage or maxage:
+            for f in fg:
+                age=time.time()-os.stat(f).st_mtime
+                if (minage and age < minage) or (maxage and age > maxage): continue
+                files.append(f)
+        else: files=[f for f in fg]
+        #sort files descending by default
+        self.files[g]=sorted(files,reverse=(not self.cfg.get('reverse',False)))
+        return len(files)
+        
+    def run(self):
+        match=self.cfg.get('match')
+        globs=self.cfg.get('glob')
+        if type(globs) is not list: globs=[globs]
+        self.files={g:[] for g in globs}
+        split=self.cfg.get('split')
+        max_index=self.cfg.get('max_index')
+        rescan_count=-1
+        while not self.shutdown.is_set():
+            
+            #clean up jobs first
+            for index_file,job in self.jobs.copy().items():
+                if not job.is_alive(): #job exited
+                    index,file=index_file.split('_',1)
+                    self.logger.info('job[%s] for %s %s'%(index,file,job.state))
+                    self.set_file_status(index,file,job.poll())
+                    del self.jobs[index_file]
+
+            #rescan
+            rescan_count=(rescan_count+1) % self.rescan
+            if not rescan_count: #scan files
+                for g in self.files.keys(): self.rescan_files(g)
+                for lindex,g in enumerate(globs): #list index (index of glob->file list)
+                    for index,file in enumerate(self.files[g]): #index down file list
+                        if max_index and index > max_index: break
+                        index=min(index,len(self.cfg.get('jobs',[]))-1) #at last jobspec, use last index available
+                        try: status=self.check_file_status(index,file)
+                        except Exception as e:
+                            self.logger.warning(e,exc_info=True)
+                            status=True #skip this
+                        if not status: #if file is not running and not processed
+                            fparts=file.split(split)
+                            if split and match: #if we're matching parts to make a set
+                                mparts=split.join(fparts[:match]) #generate match string
+                                logging.debug('fileset: match %s'%(index,mparts))
+                                fileset={} #files across lists that match 
+                                for g,files in self.files.items(): #check across lists
+                                    for file in files:
+                                        if file.startswith(mpat):
+                                            fileset[g]=file #found it
+                                            break
+                                if len(fileset) == len(globs): #complete fileset
+                                    self.logger.info('starting jobs[%s] for fileset %s'%(index,list(fileset.values())))
+                                    for lindex,g in enumerate(globs): #start a job for each file in set
+                                        try: self.start_file_job(index,lindex,fileset[g],fileset[g].split(split))
+                                        except Exception as e: self.logger.error(e,exc_info=True)
+                            else: 
+                                try: self.start_file_job(index,lindex,file,fparts)
+                                except Exception as e: self.logger.error(e,exc_info=True)
+            c=0
+            while not self.shutdown.is_set():
+                c+=1
+                time.sleep(1)
+                if c > self.refresh: break
+        
+        for index_file,job in self.jobs.values(): 
+            self.logger.warning('killing job for %s'%index_file)
+            job.kill()
+
+
+def apply_config(**cfg):
+    global CFG,CLIENT,WATCH
+    logging.info('reloading config')
+    CFG.update(cfg)
+    #load config defaults
+    defaults=CFG.get('defaults',{})
+
+    #init client
+    if not CLIENT: 
+        ccfg={'refresh':10}
+        ccfg.update(defaults)
+        ccfg.update(cfg.get('client',{}))
+        CLIENT=Client(**ccfg)
+
+    #stop/start watch threads
+    watch=cfg.get('watch',{})
+    for w in WATCH.copy(): 
+        if w not in watch:
+            wt=WATCH[w]
+            wt.shutdown.set()
+            logging.info('stopping %s'%watch.name)
+            wt.join()
+            del WATCH[w]
+    for w in watch.keys():
+        if w not in WATCH:
+            wcfg=defaults.copy()
+            wcfg.update(watch[w])
+            logging.info('adding watch %s'%w)
+            WATCH[w]=Watch(w,**wcfg)
+
+def signal_stop(*args):
+    global SHUTDOWN
+    logging.debug(args)
+    SHUTDOWN.set()
+
+def signal_reload(*args):
+    logging.debug(args)
+    apply_config(**config())
+
+def config():
+    cfgargs,args=cmdline_parser(sys.argv[1:])
+    cfg=read_cfg_files(args)
+    cfg.update(cfgargs)
+    logging.basicConfig(**cfg.get('logging',{'level':logging.INFO}))
+    return cfg
+
+signal.signal(signal.SIGINT,signal_stop)
+signal.signal(signal.SIGTERM,signal_stop)
+signal.signal(signal.SIGHUP,signal_reload)
+
+global CFG,WATCH,CLIENT
+CLIENT=None
+CFG={'cleanup':300} #loaded config
+WATCH={} #watch threads we're running 
+SHUTDOWN=threading.Event()   
+
+#do we have args?
+if len(sys.argv) < 2: sys.exit(usage())
+
+#get config
+apply_config(**config())
+
+#slow ._* cleanup will happen here
+while not SHUTDOWN.is_set(): 
+    if CFG.get('cleanup'):
+        paths=[w.path for w in WATCH.values()]
+        for path in paths:
+            if SHUTDOWN.is_set(): break
+            logging.debug('cleaning up %s'%path)
+            hidden_files=glob.glob(os.path.join(path,'._*'))
+            for hf in hidden_files:
+                if SHUTDOWN.is_set(): break
+                #from ._name_index_file.state get file.state, strip off state
+                file='.'.join( os.path.split(hf)[1].split('_',4)[3].split('.')[:-1] )
+                try:
+                    if not os.path.exists(os.path.join(path,file)):
+                        logging.debug('%s %s does not exist, removed %s'%(path,file,hf))
+                        os.unlink(hf)
+                except Exception as e: logging.debug(e)
+            time.sleep(1)
+        c=0
+        while not SHUTDOWN.is_set():
+            c+=1
+            time.sleep(1)
+            if c > CFG['cleanup']: break
+    else: time.sleep(1)
+
+#shut down all watches
+for w in WATCH.values():
+    w.shutdown.set()
+    w.join()
+
+sys.exit()

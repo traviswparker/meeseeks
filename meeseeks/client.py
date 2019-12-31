@@ -46,7 +46,8 @@ class Client(State):
     def __init__(self,address=None,port=13700,timeout=10,refresh=0,poll=10,expire=60,set_global=False,**cfg):
 
         #state object to cache cluster state from the node
-        State.__init__(self,None,
+        if refresh:
+            State.__init__(self,None,
                         expire=expire,
                         expire_active_jobs=False)
      
