@@ -11,16 +11,18 @@
         stdin: path #path to file to use for the job's stdin
         stdout: path #optional, path to file to use for the job's stdout else stdout_data returns the base64 encoded output
         stderr: path #optional, path to file to use for the job's stderr else stderr_data returns the base64 encoded output
-        runtime: int  #optional, maximum runtime of the job
+        runtime: int  #optional, maximum runtime of the job. job will be killed and marked as failed if exceeded.
         hold: false|true #optional, if true job will be assigned to a node but not run until set false
         restart: false|true    #if true, job will be restarted on the same node if it exits with success (rc == 0)
         retries: int           #if >0, job will be restarted a max of retries if it exits with failure (rc != 0)
+        resubmit:              #if true, when job is finished (done or failed), resubmit it to the submit_node
         config: dict           #pool/task-specific configuration (default sets Popen arguments)
         tags: list             #list of tags, can be matched in query with tag=
         state: new|killed      #set state of job, killed will stop running job, new will restart finished job.
     }
     jobinfo is submitted jobargs plus attributes:
         node: the node the job is assigned to
+        submit_node: the node the job was submitted on
         state: the job state (new,running,done,failed,killed)
         active: True if the job is being processed by a node.
                 To move a job: kill the job, wait for active=False, then reassign and set state='new'.

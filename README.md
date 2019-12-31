@@ -195,15 +195,16 @@ killed: job was killed, rc may be set if job was running.
                 stdin= stdout= stderr= (redirect job in/out/err to files named)
                 restart= (1=restart when done)
                 retries= (times to retry if job fails)
+                resubmit= (1=resubmit when job is done or fails)
                 runtime= (max runtime of job)
                 id= (set new job's id or submit changes to existing job)
                 state= (change existing job state, 'new' will restart finished job)
                 hold= (1=queue but do not start job)
-                tags= list of tags, can be matched in query with tag=
+                tag= list of tags, can be matched in query with tag=
 
         job|get [jobids|filter] (get all or specified job info as JSON)
             jobids are any number of job id arguments
-            filter is any job attributes such as tag= node= pool= state=
+            filter is any job attributes such as node= pool= state= tag=
 
         ls [filter] (list job ids)
 
@@ -217,7 +218,8 @@ killed: job was killed, rc may be set if job was running.
         stat|show [filter] {nodes pools jobs active tree} 
             (prints flat or tree cluster status, 
              specify which elements to show, defaults to flat/all)
-
+             Job Flags: A=active H=hold E=error R=repeating
+             
         nodes (prints full node status JSON)
 
         pools (prints full pool status JSON)

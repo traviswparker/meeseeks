@@ -25,6 +25,7 @@ def usage():
                 stdin= stdout= stderr= (redirect job in/out/err to files named)
                 restart= (1=restart when done)
                 retries= (times to retry if job fails)
+                resubmit= (1=resubmit when job is done or fails)
                 runtime= (max runtime of job)
                 id= (set new job's id or submit changes to existing job)
                 state= (change existing job state, 'new' will restart finished job)
@@ -47,6 +48,7 @@ def usage():
         stat|show [filter] {nodes pools jobs active tree} 
             (prints flat or tree cluster status, 
              specify which elements to show, defaults to flat/all)
+             Job Flags: A=active H=hold E=error R=repeating
 
         nodes (prints full node status JSON)
 
@@ -130,9 +132,9 @@ def show(client,args,**kwargs):
                         elif job.get('rc') is not None: rc='(%s)'%job['rc']
                         if job.get('error'): flags+='E '
                         if job.get('hold'): flags+='H '
-                        if job.get('restart'): flags+='R '
+                        if job.get('restart') or job.get('resubmit'): flags+='R '
                         print(l+'%s\t[%s]\t%s\t%s\t%s\t%s'%(
-                            jid,','.join(tag for tag in job['tags']),flags,job['state'],rc,' '.join(job.get('args',[]))) )
+                            jid,','.join(str(tag) for tag in job['tags']),flags,job['state'],rc,' '.join(job.get('args',[]))) )
             if 'next' in node:
                 _print(node['next'],i+1)
     _print(nodes,0)

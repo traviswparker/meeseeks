@@ -17,16 +17,17 @@ class State(threading.Thread):
             stdin: filename to redirect stdin from
             stdout: filename to redirect stdout to
             stderr: filename to redirect stderr to
-            restart: if true, job will be restart on exit
-            restries: count of times to restart a failed job. 
-                      job will be reassigned to the start of the nodelist if provided
-            runtime: job maximum runtime in seconds
+            restart: if true, job will be restarted on same node when done
+            retries: count of times to restart a failed job on same node
+            resubmit: if true, when job is finished (done or failed), resubmit it to the submit_node
+            runtime: job maximum runtime in seconds. job will be killed and marked as failed if exceeded.
             hold: if true, job will not run until cleared
             config: job task configuration dict. for Task spawned by Pool, sets popen args.
             tags: list of tags, can be matched in query with tag=
 
         job attributes:
             node: the node the job is assigned to
+            submit_node: the node the job was submitted to
             state: the job state (new,running,done,failed,killed)
             active: True if the job is being processed by a node.
                     To move a job: kill the job, wait for active=False, then reassign and set state='new'.
@@ -56,6 +57,7 @@ class State(threading.Thread):
                 'stdout',
                 'restart',
                 'retries',
+                'resubmit',
                 'runtime',
                 'hold',
                 'config',
@@ -282,6 +284,8 @@ class State(threading.Thread):
                     else: #this is a new job
                         if not jobargs.get('pool'): return {jid:False} #jobs have to have a pool to run in
                         if 'state' in jobargs: del jobargs['state'] #new jobs can't have a state
+                        #tags must be a list
+                        if type(jobargs.get('tags')) is not list: jobargs['tags']=[jobargs.get('tags')]
                         job={  
                                 'submit_ts':time.time(),    #submit timestamp
                                 'node':jobargs.get('node',False),               #no node assigned unless jobargs set one
@@ -289,7 +293,6 @@ class State(threading.Thread):
                                 'state':'new',
                                 'start_count':0,             
                                 'fail_count':0,
-                                'tags':[]
                             }
                     job.update(**jobargs)
                     self.__update_job(jid,**job)
@@ -301,6 +304,7 @@ class State(threading.Thread):
     def __state_run(self):
         self.logger.info('started')
         checkpoint_count=0
+
         while not self.shutdown.is_set():
             self.logger.debug('status %s'%self.__status)
             with self.__lock:
@@ -331,12 +335,21 @@ class State(threading.Thread):
                                 #set job to failed
                                 self.__update_job(jid,state='failed',error='expired',fail_count=job.get('fail_count',0)+1)
 
-                    #scan for jobs to retry
+                    #scan for jobs to restart/retry/resubmit
                     for jid,job in self.__jobs.items():
-                        #if we retry on fail, reset the job to inactive/new and assign to the submit node
-                        if job['state'] == 'failed' and job.get('retries') and job.get('fail_count') <= job.get('retries',0):
-                            self.logger.info('retry job %s (%s/%s)'%(jid,job.get('fail_count'),job.get('retries')))
-                            self.__update_job(jid,state='new',active=False,node=job.get('submit_node',False))
+                        #if we restart and this job is done, reset to new
+                        if job.get('restart') and job['state'] == 'done':
+                            self.logger.info('restart job %s'%(jid))
+                            self.__update_job(jid,state='new')
+                        #if we retry on fail, reset the job and keep on this node
+                        elif job.get('retries') and job['state'] == 'failed' and job.get('fail_count') <= job.get('retries',0):
+                            self.logger.info('retry job %s (%s of %s)'%(jid,job.get('fail_count'),job.get('retries')))
+                            self.__update_job(jid,state='new')
+                        #if we resubmit finished jobs and job was not killed, reset it but only if we are the submit node
+                        elif job.get('resubmit') and not job.get('active') and job['state'] not in ['new','killed'] \
+                            and self.node and job.get('submit_node') == self.node:
+                                self.logger.info('resubmit job %s'%(jid))
+                                self.__update_job(jid,fail_count=0,start_count=0,state='new',node=self.node)
 
                     #set nodes that have not sent status to offline
                     for node,node_status in self.__status.copy().items():
@@ -349,9 +362,12 @@ class State(threading.Thread):
                                 del self.__status[node]
 
                 except Exception as e: self.logger.warning(e,exc_info=True)
+
+                #save to state file if checkpointing set
                 if self.checkpoint:
                     checkpoint_count=(checkpoint_count+1) % self.checkpoint
                     if not checkpoint_count: self.__save_state()
+
             time.sleep(1)
 
         #close history file if we have one

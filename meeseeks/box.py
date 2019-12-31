@@ -211,8 +211,11 @@ class Box:
                     #add jobs without node assigned, these were just submitted and need routing
                     jobs.update(self.state.get(node=False))
                     node_status=self.state.get_nodes()
-                    for jid,job in jobs.items():
+                    #process jobs by least recently updated to most recently updated
+                    for jid,job in sorted(jobs.items(),key=lambda j:j[1]['ts']):
                         try:
+                            #if no submit node, we're the first to handle it so set if we're a node
+                            if not job.get('submit_node'): self.state.update_job(jid,submit_node=self.name)
                             pool=job['pool']
                             pool_status=self.state.get_pools().get(pool,{})
                             #we need to select a node:

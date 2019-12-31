@@ -72,7 +72,7 @@ class Pool(threading.Thread):
             self.logger.warning(e)
             self.update_job(jid,state='failed',error=str(e))
     
-    def kill_job(self,jid,job):
+    def kill_job(self,jid,job,state='killed'):
         '''kill running task and wait for task to exit'''
         task_info={}
         if jid in self.__tasks:
@@ -82,7 +82,7 @@ class Pool(threading.Thread):
                 self.__tasks[jid].kill()
                 self.__tasks[jid].join()
             except Exception as e: self.logger.warning(e,exc_info=True)
-        return self.update_job(jid,state='killed',**task_info)
+        return self.update_job(jid,state=state,**task_info)
 
     def check_job(self,jid,job):
         state=job['state']
@@ -114,13 +114,13 @@ class Pool(threading.Thread):
                 state='running', 
                 **self.__tasks[jid].info )
             )
-        #was job killed or max runtime
+        #did job exceed max runtime? if so, kill job but mark as failed
         elif job.get('runtime') and (time.time()-job['start_ts'] > job['runtime']):
             self.logger.warning('job %s exceeded job runtime of %s'%(jid,job['runtime']))
-            self.kill_job(jid,job)
+            self.kill_job(jid,job,'failed')
         elif self.max_runtime and (time.time()-job['start_ts'] > self.max_runtime):
             self.logger.warning('job %s exceeded pool runtime of %s'%(jid,self.max_runtime))
-            self.kill_job(jid,job)
+            self.kill_job(jid,job,'failed')
         return info #return task info if any
 
     def __pool_run(self):
@@ -143,14 +143,11 @@ class Pool(threading.Thread):
                             self.update_job(jid,state=job['state'],**task_info) #update with task info
                     
                     #can we activate a job?
-                    # new 
-                    # or done and restart set, 
-                    # or failed and retries not exceeded)
                     #  set job active if not
                     #  start job if not on hold and a slot is free
-                    if (job['state'] == 'new' or (job['state'] == 'done' and job.get('restart'))):
+                    if job['state'] == 'new':
                         if not job.get('active'): job=self.update_job(jid,active=True) #claim the job
-                        #do we have a free slot, and is the job not on hold?
+                        #do we have a free slot, and is the job/pool not on hold?
                         if not job.get('hold') and not self.hold and ((self.slots is True) or (len(self.__tasks) < self.slots)):
                                 self.start_job(jid)
 
