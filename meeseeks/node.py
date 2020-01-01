@@ -23,6 +23,7 @@ class Node(threading.Thread):
         self.__lock=threading.Lock() #to ensure direct request and sync don't clobber
         self.__socket=None
         self.shutdown=threading.Event()
+        self.sync=threading.Event()
         self.refresh=0
         self.config(**cfg)
         if self.refresh: self.start() #if refresh=0, do not start thread
@@ -107,5 +108,8 @@ class Node(threading.Thread):
                 updated=self.state.sync(jobs,status,remote_node=self.remote_node)
                 self.logger.debug('%s sent %s, updated %s, local_seq %s, remote_seq %s'%
                     (time.time(),len(sync),len(updated),local_seq,remote_seq)    )
+                #toggle the sync Event to signal anything waiting for sync
+                self.sync.set()
+                self.sync.clear()
             time.sleep(self.refresh) 
         if self.__socket:self.__socket.close()

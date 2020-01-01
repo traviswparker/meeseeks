@@ -109,6 +109,8 @@ the Client object provides a request-oriented API
     client.get_nodes()          #returns { nodename:{status} for all nodes }
     client.get_pools()          #returns { poolname:{nodename:slots_available} for online nodes} }
 
+    client.wait()               #returns after next client sync to node
+
 
 # Job class
 

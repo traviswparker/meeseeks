@@ -37,6 +37,9 @@ j=Job(cmd,args...,pool='p1',notify=callback) #create tracked Job object, auto-co
 j.start() #submit the job and start thread
 '''
 
+global _CLIENT
+_CLIENT=None
+
 class Client(State):
     '''client class to connect to a node and manage the state of it and all downstream nodes.
         Client methods are available to make direct requests
@@ -95,8 +98,12 @@ class Client(State):
     #for sending raw requests
     def request(self,req): return self.__node.request([req])[0]
     
+    #blocks until next node sync
+    def wait(self): self.__node.sync.wait()
+
     def close(self): 
         #stop the node and state threads
+        self.__node.sync.wait()
         self.__node.shutdown.set()
         self.__node.join()
         self.shutdown.set()
