@@ -10,11 +10,11 @@ import glob
 
 from meeseeks.util import cmdline_parser, read_cfg_files
 from meeseeks.client import Client
-from meeseeks.watch import Watch
+from meeseeks.watch import FileWatch, JobWatch
 
 global CFG,WATCH,CLIENT,SHUTDOWN
 CLIENT=None
-CFG={'cleanup':300} #loaded config
+CFG={'cleanup':300} #default config
 WATCH={} #watch threads we're running 
 SHUTDOWN=threading.Event()   
 
@@ -28,31 +28,41 @@ def usage():
     JSON config format, can also be specified on command line as key.subkey..=value|value,value
 
     {
-        "defaults" : { ... defaults for all other sections ... }
+        "defaults" : { ... defaults for all other sections ... },
 
-        "client" : { ... configuration for connecting to meeseeks ... }
+        "client" : { ... configuration for connecting to meeseeks ... },
+        
+        "template" : {
+                    null|"<name>": { defines a watch template, see spec for watch. 
+                                     A template named null will be applied to all watch configs }
+        },
 
         "watch" : {
-                    <name>: { 
+                    "<name>": { 
+                                "template": <name> applies template <name> to this watch config. 
+                                                   Keys defined here override template
                                 "path" : <path to watch>
                                 "glob" : <pattern> | [ <pattern>, ... ]
                                          Watches the files matching the pattern. 
                                          A list of patterns can be specified to watch multiple lists of files
-                                "reverse" : <bool> (files are ASCII sorted Z->A, 9->0 to handle datestamps newest to oldest. 
-                                                    If true, reverse sort the files (oldest to newest))
-                                "split" : <character> (optional character to split filenames on to generate match parts)
-                                "fileset" : <int> match partial filenames across lists to create filesets
-                                            a fileset is complete when the first <int> parts of a filename in each list matches.
-                                            files will not be processed until a complete fileset exists. 
-                                            For example,
-                                             glob: [*.foo,*.bar,*.baz]
-                                             split: .
-                                             match: 2
-                                             the set will be complete if we have 20200101.00.foo, 20200101.00.bar, 20200101.00.baz
-                                          default is 0 (no filesets matching)
+                                         Use a glob of "*" for all files
+                                         If no globs are defined, this watch will simply ensure the jobs defined are always running
+                                "reverse" : <bool> files are ASCII sorted Z->A, 9->0 to handle datestamps newest to oldest. 
+                                                    If true, reverse sort the files (oldest to newest)
+                                "split" : <character> optional character to split filenames on to generate match parts.
+                                "fileset" : <int> match filename parts across lists to create filesets
+                                                    a fileset is complete when the first <int> parts of a filename in each list matches.
+                                                    files will not be processed until a complete fileset exists. 
+                                                    For example,
+                                                    glob: [*.foo,*.bar,*.baz]
+                                                    split: .
+                                                    match: 2
+                                                    the set will be complete if we have 20200101.00.foo, 20200101.00.bar, 20200101.00.baz
+                                          default is 0 (no filesets)
                                 "updated" : <bool> if set, files will be reprocessed if modtime changes. Default false.
-                                                    Only job 0 will be resubmitted.
+                                                   If multiple jobs are defined, only the first will be run on file update.
                                 "retry" : <bool> if true, files with failed jobs will be reprocessed. Default true.
+                                                 killed jobs will never be retried
                                 "run_all" : <bool> if true, unprocessed jobs from 0 to the file's index will be sequentially submitted.
                                                    if false, only the unprocessed job for the file's index will be submitted.
                                                    default true
@@ -73,8 +83,10 @@ def usage():
                                         last jobspec(s) in list will be submitted on all other unprocessed files
                                 ]
 
+                                if a jobspec is empty or null, do nothing.
                                 if only one job is defined, this job will be run on all files
                                 if multiple jobs are defined, files will have the jobs run on them in sequence as more files appear
+
                                 for example, when a new file[0] appears:
                                     jobs[0] will run on new file[0]
                                     previously processed file[0] will now be file[1], so jobs[1] will run on it
@@ -83,24 +95,24 @@ def usage():
                                 if a job is a list of jobspecs:
                                     the first jobspec will be submitted for files from the first list,    
                                     the second jobspec for the second list, and so on.
-                                    files with no associated jobspec or an empty/null jobspec will be immediately marked as processed
+                                    files in lists with no jobspec or an empty/null jobspec will be immediately marked as processed
         
                                 in jobspecs, the following formats are available for strings:
                                     %(name)s        name of this watch
                                     %(filename)s    filename
                                     %(file)s        full path to file including filename
-                                    %(<n>)s         part <n> of the filename (if split set)
+                                    %(<n>)s         part <n> of the filename
                                     %(<k>)s         key <k> in the watch config
 
-                                When a file job is exits, the job result JSON is written to a hidden file in <path> named:
-                                ._<name>_<n>_<file>.<state>
+                                When a job ends, the job result JSON is written to a hidden file in <path> named:
+                                ._<name>_<n>_<filename>.<state>
                                 <name> is the name of the watch
-                                <n> is the index of the job in the jobspec list (0=jobspec for first, etc.. )
-                                <file> is the filename
+                                <n> is the index of the job in the jobspec list
+                                <filename> is the filename
                                 <state> is the finished job state, typically "done" if successful. 
-                                        If a .done file exists the file is considered processed
+                                        If a .done (or .failed if retry=0) file exists the file is considered processed
 
-                                If updated=True, last file mtime is tracked in ._<name>_<n>_<file>.mtime
+                                If updated=True, last file mtime is tracked in ._<name>_<n>_<filename>.mtime
 
                                 hidden ._ files will be deleted when associated files are deleted, unless cleanup=0
                     } 
@@ -124,14 +136,18 @@ def apply_config(**cfg):
 
     #stop/start watch threads
     watch=cfg.get('watch',{})
-    for w in WATCH.copy(): 
+    for w in WATCH.copy(): #stop removed watch
         if w not in watch: stop_watch(w)
     for w in watch.keys():
-        if w not in WATCH:
-            wcfg=defaults.copy()
-            wcfg.update(watch[w])
+        wcfg=defaults.copy()
+        #apply template, template[None] will apply to all
+        wcfg.update( cfg.get('template',{}).get( watch[w].get('template'),{} ) ) 
+        #apply watch config
+        wcfg.update(watch[w])
+        if w not in WATCH: #add new
             logging.info('adding watch %s'%w)
             WATCH[w]=Watch(w,client=CLIENT,**wcfg)
+        else: WATCH[w].config(**wcfg) #reconfigure existing
 
 def stop_watch(w):
     global WATCH
@@ -157,9 +173,6 @@ def config():
     logging.basicConfig(**cfg.get('logging',{'level':logging.INFO}))
     return cfg
 
-signal.signal(signal.SIGINT,signal_stop)
-signal.signal(signal.SIGTERM,signal_stop)
-signal.signal(signal.SIGHUP,signal_reload)
 
 #do we have args?
 if len(sys.argv) < 2: sys.exit(usage())
@@ -167,7 +180,12 @@ if len(sys.argv) < 2: sys.exit(usage())
 #get config
 apply_config(**config())
 
-#slow ._* cleanup
+#set signal handlers
+signal.signal(signal.SIGINT,signal_stop)
+signal.signal(signal.SIGTERM,signal_stop)
+signal.signal(signal.SIGHUP,signal_reload)
+
+#slow state file cleanup
 while not SHUTDOWN.is_set(): 
     if CFG.get('cleanup'):
         paths=[w.path for w in WATCH.values()]
@@ -186,6 +204,7 @@ while not SHUTDOWN.is_set():
                 except Exception as e: logging.debug(e)
             time.sleep(1)
         c=0
+        #interruptible sleep until next cleanup
         while not SHUTDOWN.is_set():
             c+=1
             time.sleep(1)
@@ -195,5 +214,5 @@ while not SHUTDOWN.is_set():
 #shut down all watches
 for w in list(WATCH.keys()): stop_watch(w)
 
-#close client gracefully to sync final state
-if CLIENT: CLIENT.close()
+#close client to ensure state is synced
+CLIENT.close()
