@@ -10,7 +10,7 @@ import glob
 
 from meeseeks.util import cmdline_parser, read_cfg_files
 from meeseeks.client import Client
-from meeseeks.watch import FileWatch, JobWatch
+from meeseeks.watch import Watch
 
 global CFG,WATCH,CLIENT,SHUTDOWN
 CLIENT=None
@@ -101,6 +101,8 @@ def usage():
                                     %(name)s        name of this watch
                                     %(filename)s    filename
                                     %(file)s        full path to file including filename
+                                    %(fileset)s     all filenames in the fileset
+                                    %(fileset<n>)s  if a fileset, will be list<n> filename
                                     %(<n>)s         part <n> of the filename
                                     %(<k>)s         key <k> in the watch config
 

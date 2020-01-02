@@ -106,8 +106,9 @@ class Node(threading.Thread):
                 #get node status
                 status=response.get('nodes',{})
                 updated=self.state.sync(jobs,status,remote_node=self.remote_node)
-                self.logger.debug('%s sent %s, updated %s, local_seq %s, remote_seq %s'%
-                    (time.time(),len(sync),len(updated),local_seq,remote_seq)    )
+                if sync or updated:
+                    self.logger.debug('%s sent %s, updated %s, local_seq %s, remote_seq %s'%
+                        (time.time(),len(sync),len(updated),local_seq,remote_seq)    )
                 #toggle the sync Event to signal anything waiting for sync
                 self.sync.set()
                 self.sync.clear()

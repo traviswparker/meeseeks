@@ -197,7 +197,7 @@ class Box:
                     #handle config jobs assigned to us
                     for jid,job in self.state.get(node=self.name,pool='__config').items():
                         if job['state'] == 'new':
-                            self.logger.debug('got __config job %s: %s'%(jid,job))
+                            self.logger.info('got config %s: %s'%(jid,job))
                             if job['args']: #if changes were pushed
                                 self.cfg.update(job['args'])
                                 self.restart.set() #main loop breaks and apply_config is called
@@ -222,7 +222,7 @@ class Box:
                             # with open slots (slots > 0)
                             # or full (slots is < 1) but jobs can wait
                             # or without defined slots (slots is True)
-                            nodes=[node for node,free_slots in pool_status.items() if free_slots or self.cfg.get('wait_in_pool')]
+                            nodes=[node for node,free_slots in pool_status.items() if free_slots>0 or self.cfg.get('wait_in_pool')]
 
                             #if no nodes or job in hold, we can't route this job yet
                             if not nodes or (job.get('hold') and not self.cfg.get('wait_in_pool')):
@@ -293,7 +293,7 @@ class Box:
         if 'config' in request:
             cfg=request['config']
             if cfg: #if changes were pushed
-                self.logger.debug('got config request: %s'%cfg)
+                self.logger.info('got config request: %s'%cfg)
                 self.cfg.update(request['config'])
                 self.restart.set() #main loop breaks and apply_config is called
             response['config']=self.cfg 

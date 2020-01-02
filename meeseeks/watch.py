@@ -26,7 +26,7 @@ class Watch(threading.Thread):
         threading.Thread.__init__(self,name=name)
         self.start()
 
-    def config(**cfg): 
+    def config(self,**cfg): 
         self.cfg.update(cfg)
         self.path=self.cfg['path']
         self.refresh=int(cfg.get('refresh',10))
@@ -59,24 +59,31 @@ class Watch(threading.Thread):
             return True
         return False #not processed
 
-    def start_job(self,index,lindex=0,file=None,fparts=[]):
+    def start_job(self,index,lindex=0,file=None,fparts=[],**kwargs):
         #index is jobspec  index
         #lindex is jobspec list index (usually 0)
         #file is filename, fparts is filename as parts
         jobspec=self.cfg['jobs'][index] #get jobspec(s) at index
         if jobspec:
             if type(jobspec) is not list: jobspec=[jobspec] #make single jobspec a list
-            self.logger.info('starting job[%s,%s] for %s'%(index,lindex,file))
+            if file: self.logger.info('starting job %s_%s'%(index,file))
+            else: self.logger.info('starting job %s'%index)
             if len(jobspec)>lindex: #jobspec for this lindex exists
                 jobspec=jobspec[lindex]
                 if jobspec:
                     jobspec=jobspec.copy() #don't modify configured spec
                     c=self.cfg.copy() #get watch config
+                    c.update(**kwargs) #get extra jobargs
                     #add in file
+                    jid=str(index)
                     if file: 
                         c.update(filename=file.name,file=file.path)
                         #add in filename parts
                         c.update((str(i),p) for (i,p) in enumerate(fparts))
+                        #add in fileset 
+                        if 'fileset' in kwargs: 
+                            c.update(('fileset'+str(i),f) for (i,f) in enumerate(kwargs['fileset']))
+                        jid+='_'+file.name
                     #do format string subs
                     for k,v in jobspec.items():
                         if type(v) is str: jobspec[k]=v%c
@@ -84,8 +91,7 @@ class Watch(threading.Thread):
                     self.logger.debug(jobspec)
                     job=Job(client=self.client,**jobspec)
                     if job.start(): 
-                        if file: self.__jobs['%s_%s'%(index,file.name)]=job
-                        else: self.__jobs[index]=job
+                        self.__jobs[jid]=job
                         return True
                     else: 
                         self.logger.warning(job)
@@ -120,18 +126,18 @@ class Watch(threading.Thread):
             match=self.cfg.get('fileset')
             globs=self.cfg.get('glob')
             jobs=self.cfg.get('jobs',[])
-            if type(globs) is not list: globs=[globs]
+            if globs and type(globs) is not list: globs=[globs]
             split=self.cfg.get('split')
             max_index=self.cfg.get('max_index')
 
             #clean up jobs first
-            for index_file,job in self.__jobs.copy().items():
+            for jid,job in self.__jobs.copy().items():
                 if not job.is_alive(): #job exited
-                    if '_' in index_file: index,filename=index_file.split('_',1)
-                    else: index,filename=index_file,None
-                    self.logger.info('job[%s] for %s %s'%(index,filename,job.state))
-                    if filename: self.set_file_status(index,filename,job.poll())
-                    del self.__jobs[index_file]
+                    self.logger.info('job %s %s'%(jid,job.state))
+                    if '_' in jid: #set file status if this job is for a file
+                        index,filename=jid.split('_',2)
+                        self.set_file_status(index,filename,job.poll())
+                    del self.__jobs[jid]
 
             if globs: #if we are tracking files
                 rescan_count=(rescan_count+1) % self.rescan
@@ -152,7 +158,7 @@ class Watch(threading.Thread):
                     for lindex,glob in enumerate(globs): #list index (index of glob->file list)
                         for file_index,file in enumerate(self.__files[glob]): #index down file list
                             if max_index and file_index > max_index: break
-                            job_index=min(file_index,len(jobs-1) #at last jobspec, use last index available
+                            job_index=min(file_index,len(jobs-1)) #at last jobspec, use last index available
                             if self.cfg.get('run_all',True): min_index=0
                             else: min_index=job_index
                             for index in range(min_index,job_index+1): #0 to index for run_all, just index if not
@@ -169,6 +175,7 @@ class Watch(threading.Thread):
 
                                 if not status: #if file is not running and not processed
                                     fparts=file.name.split(split) #get filename parts
+
                                     if split and match: #if we're matching parts to make a set
                                         mpat=split.join(fparts[:match]) #generate match string
                                         logging.debug('fileset: match %s'%mpat)
@@ -179,11 +186,16 @@ class Watch(threading.Thread):
                                                     fileset[glob]=file #found it
                                                     break
                                         if len(fileset) == len(globs): #complete fileset
-                                            self.logger.info('starting jobs[%s] for fileset %s'%(index,list(fileset.values())))
+                                            self.logger.debug('fileset %s'%(index,list(fileset.values())))
                                             for lindex,glob in enumerate(globs): #start a job for each file in set
-                                                try: self.start_job(index,lindex,fileset[glob],fileset[glob].split(split))
+                                                try: self.start_job(
+                                                    index,lindex
+                                                    ,fileset[glob],fileset[glob].split(split),
+                                                    fileset=[ fileset[g] for g in globs ] 
+                                                )
                                                 except Exception as e: self.logger.error(e,exc_info=True)
                                             break #if run_all, don't start the next index job until this one is finished
+
                                     else: #not fileset, start job
                                         try: self.start_job(index,lindex,file,fparts)
                                         except Exception as e: self.logger.error(e,exc_info=True)
@@ -191,7 +203,7 @@ class Watch(threading.Thread):
                 
             else: #just track jobs
                 for index in range(len(jobs)):
-                    if index in self.__jobs: continue #still running
+                    if str(index) in self.__jobs: continue #still running
                     self.start_job(index) #start it
 
             c=0
@@ -200,6 +212,6 @@ class Watch(threading.Thread):
                 time.sleep(1)
                 if c > self.refresh: break
         
-        for index_file,job in self.__jobs.items(): 
-            self.logger.warning('killing job for %s'%index_file)
+        for jid,job in self.__jobs.items(): 
+            self.logger.warning('killing job %s'%jid)
             job.kill()

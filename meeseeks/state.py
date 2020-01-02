@@ -306,7 +306,6 @@ class State(threading.Thread):
         checkpoint_count=0
 
         while not self.shutdown.is_set():
-            self.logger.debug('status %s'%self.__status)
             with self.__lock:
                 try:
                     #write recently finished jobs to history
