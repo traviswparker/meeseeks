@@ -41,7 +41,7 @@ def usage():
                                 "reverse" : <bool> (files are ASCII sorted Z->A, 9->0 to handle datestamps newest to oldest. 
                                                     If true, reverse sort the files (oldest to newest))
                                 "split" : <character> (optional character to split filenames on to generate match parts)
-                                "match" : <int> match partial filenames across lists to create filesets
+                                "fileset" : <int> match partial filenames across lists to create filesets
                                             a fileset is complete when the first <int> parts of a filename in each list matches.
                                             files will not be processed until a complete fileset exists. 
                                             For example,
@@ -51,7 +51,11 @@ def usage():
                                              the set will be complete if we have 20200101.00.foo, 20200101.00.bar, 20200101.00.baz
                                           default is 0 (no filesets matching)
                                 "updated" : <bool> if set, files will be reprocessed if modtime changes. Default false.
-                                "retry" : <bool> if false, files with failed jobs will be considered processed. Default True
+                                                    Only job 0 will be resubmitted.
+                                "retry" : <bool> if true, files with failed jobs will be reprocessed. Default true.
+                                "run_all" : <bool> if true, unprocessed jobs from 0 to the file's index will be sequentially submitted.
+                                                   if false, only the unprocessed job for the file's index will be submitted.
+                                                   default true
                                 "min_age" : <int> if set, file must be at least <int> seconds old to be considered
                                 "max_age" : <int> if set, file must be newer than <int> seconds to be considered
                                 "max_index": <int> if set, maximum index down the list we will submit jobs for.
