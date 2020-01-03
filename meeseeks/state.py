@@ -336,7 +336,7 @@ class State(threading.Thread):
                     #scan for jobs to restart/retry/resubmit
                     for jid,job in self.__jobs.items():
                         #if we restart and this job is done, reset to new
-                        if job.get('restart') and job['state'] == 'done':
+                        if job.get('restart') and job['state'] == 'done' and self.node and job.get('node')==self.node:
                             self.logger.info('restart job %s'%(jid))
                             self.__update_job(jid,state='new')
                         #if we retry on fail, reset the job and keep on this node
