@@ -28,7 +28,7 @@ class Watch(threading.Thread):
 
     def config(self,**cfg): 
         self.cfg.update(cfg)
-        self.path=self.cfg['path']
+        self.path=self.cfg.get('path')
         self.refresh=int(cfg.get('refresh',10))
         self.rescan=int(cfg.get('rescan',60))/self.refresh
 
@@ -41,7 +41,7 @@ class Watch(threading.Thread):
         if self.cfg.get('updated'): #save mtime
             try:
                 with open(os.path.join(self.path,'._%s_%s_%s.%s'%(self.name,index,filename,'mtime')),'w') as fp:
-                    fp.writelines((str(os.stat(filename).st_mtime)))
+                    fp.writelines((str(os.stat(os.path.join(self.path,filename)).st_mtime)))
             except: pass
 
     def check_file_status(self,index,file,status='done'):
@@ -94,7 +94,7 @@ class Watch(threading.Thread):
                     self.__jobs[jid]=job
                     return True
                 else: 
-                    self.logger.warning(job)
+                    self.logger.error(job)
                     return False
         else: index=0 #use index 0 if no jobspec so file can be marked
         #no job started
@@ -113,7 +113,7 @@ class Watch(threading.Thread):
                     age=time.time()-file.stat().st_mtime
                     if (minage and age < minage) or (maxage and age > maxage): continue
                 files.append(file)
-            except Exception as e: self.logger.debug(e) #can't access?
+            except Exception as e: self.logger.warning('%s %s'%(file.name,e)) #can't access?
         self.__cache=sorted(files,key=lambda file:file.name,reverse=(not self.cfg.get('reverse',False)))
         return len(self.__cache)
 
@@ -132,11 +132,15 @@ class Watch(threading.Thread):
 
             #clean up jobs first
             for jid,job in self.__jobs.copy().items():
-                if not job.is_alive(): #job exited
-                    self.logger.info('job %s %s'%(jid,job.state))
-                    if '_' in jid: #set file status if this job is for a file
-                        index,filename=jid.split('_',2)
-                        self.set_file_status(index,filename,job.poll())
+                if job.poll(): #job exited
+                    if job.multi: #this is a multi-node job, we can't get a single state
+                        self.logger.info('job %s: %s exited'%(jid,len(job.poll())))
+                        job.kill() #stop the remaining parts so it can be restarted
+                    else:
+                        self.logger.info('job %s %s'%(jid,job.state))
+                        if '_' in jid: #set file status if this job is for a file
+                            index,filename=jid.split('_',2)
+                            self.set_file_status(index,filename,job.poll())
                     del self.__jobs[jid]
 
             if globs: #if we are tracking files
@@ -176,7 +180,7 @@ class Watch(threading.Thread):
                                     if not status and not self.cfg.get('retry',True): 
                                         status=self.check_file_status(index,file,'failed')
                                 except Exception as e:
-                                    self.logger.warning(e,exc_info=True)
+                                    self.logger.warning("%s %s"%(file.name,e))
                                     status=True #skip this one it smells funny
 
                                 if not status: #if file is not running and not processed
@@ -200,10 +204,10 @@ class Watch(threading.Thread):
                                 #start job
                                 if start:
                                     try: self.start_job(index,list_index,file,fparts,**jobargs)
-                                    except Exception as e: self.logger.error(e,exc_info=True)
+                                    except Exception as e: self.logger.error(e)
                                     break #if run_all, don't start the next index job until this one is finished
             
-            else: #just track jobs
+            else: #just track job
                 for index in range(len(jobs)):
                     if str(index) in self.__jobs: continue #still running
                     self.start_job(index) #start it
@@ -215,5 +219,5 @@ class Watch(threading.Thread):
                 if c > self.refresh: break
         
         for jid,job in self.__jobs.items(): 
-            self.logger.warning('killing job %s'%jid)
+            self.logger.info('killing job %s'%jid)
             job.kill()

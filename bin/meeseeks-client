@@ -170,9 +170,8 @@ try:
 
     client=Client(**cfg) #create client and connect
     
-    #if we will be refreshing, refresh now until state populated
-    if cfg.get('refresh'):
-        while not client.get_nodes(): time.sleep(1)
+    #if we will be refreshing, wait until state populated
+    if cfg.get('refresh'): client.wait()
     jids=None
 
     if cmd.startswith('sub'):

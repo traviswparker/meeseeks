@@ -317,7 +317,6 @@ class State(threading.Thread):
                     #scan for jobs that may not have made it to the node and repush them
                     for jid,job in self.__jobs.items():
                         if job['state'] == 'new' and time.time()-job['ts'] > self.timeout:
-                            self.logger.debug('job %s still in state new'%jid)
                             self.__update_job(jid) #touch the job to resend it downstream
 
                     #scan for expired jobs

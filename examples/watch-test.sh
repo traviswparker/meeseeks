@@ -5,16 +5,15 @@ do
     p=`pwd`
 done
 
-t='jobtest'
 
-meeseeks-watch logging.level=10 watch.${t}-01.template=$t watch.${t}-01.path=`pwd`/01 watch.${t}-02.template=$t watch.${t}-02.path=`pwd`/02 watch.${t}-03.template=$t watch.${t}-03.path=`pwd`/03 watch.${t}-04.template=$t watch.${t}-04.path=`pwd`/04 watch.${t}-05.template=$t watch.${t}-05.path=`pwd`/05 watch.${t}-06.template=$t watch.${t}-06.path=`pwd`/06 watch.${t}-07.template=$t watch.${t}-07.path=`pwd`/07 watch.${t}-08.template=$t watch.${t}-08.path=`pwd`/08 watch.${t}-09.template=$t watch.${t}-09.path=`pwd`/09 watch.cfg &
+start() {
+    meeseeks-watch name=$1 watch.$1-01.template=$1 watch.$1-01.path=`pwd`/01 watch.$1-02.template=$1 watch.$1-02.path=`pwd`/02 watch.$1-03.template=$1 watch.$1-03.path=`pwd`/03 watch.$1-04.template=$1 watch.$1-04.path=`pwd`/04 watch.$1-05.template=$1 watch.$1-05.path=`pwd`/05 watch.$1-06.template=$1 watch.$1-06.path=`pwd`/06 watch.$1-07.template=$1 watch.$1-07.path=`pwd`/07 watch.$1-08.template=$1 watch.$1-08.path=`pwd`/08 watch.$1-09.template=$1 watch.$1-09.path=`pwd`/09 watch.cfg &
+}
 
-t='filetest'
-
-meeseeks-watch logging.level=10 watch.${t}-01.template=$t watch.${t}-01.path=`pwd`/01 watch.${t}-02.template=$t watch.${t}-02.path=`pwd`/02 watch.${t}-03.template=$t watch.${t}-03.path=`pwd`/03 watch.${t}-04.template=$t watch.${t}-04.path=`pwd`/04 watch.${t}-05.template=$t watch.${t}-05.path=`pwd`/05 watch.${t}-06.template=$t watch.${t}-06.path=`pwd`/06 watch.${t}-07.template=$t watch.${t}-07.path=`pwd`/07 watch.${t}-08.template=$t watch.${t}-08.path=`pwd`/08 watch.${t}-09.template=$t watch.${t}-09.path=`pwd`/09 watch.cfg &
-
-t='filesettest'
-
-meeseeks-watch logging.level=10 watch.${t}-01.template=$t watch.${t}-01.path=`pwd`/01 watch.${t}-02.template=$t watch.${t}-02.path=`pwd`/02 watch.${t}-03.template=$t watch.${t}-03.path=`pwd`/03 watch.${t}-04.template=$t watch.${t}-04.path=`pwd`/04 watch.${t}-05.template=$t watch.${t}-05.path=`pwd`/05 watch.${t}-06.template=$t watch.${t}-06.path=`pwd`/06 watch.${t}-07.template=$t watch.${t}-07.path=`pwd`/07 watch.${t}-08.template=$t watch.${t}-08.path=`pwd`/08 watch.${t}-09.template=$t watch.${t}-09.path=`pwd`/09 watch.cfg &
+start 'job'
+start 'file'
+start 'fileset'
+start 'fileupdate'
+meeseeks-watch name=multi watch.multi-01.template=multi watch.cfg &
 
 while true; do sleep 1; done
