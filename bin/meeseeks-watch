@@ -12,7 +12,8 @@ from meeseeks.util import cmdline_parser, read_cfg_files
 from meeseeks.client import Client
 from meeseeks.watch import Watch
 
-global CFG,WATCH,CLIENT,SHUTDOWN
+global CFG,WATCH,CLIENT,SHUTDOWN,logger
+logger=None
 CLIENT=None
 CFG={'cleanup':300} #default config
 WATCH={} #watch threads we're running 
@@ -74,13 +75,13 @@ def usage():
 
                                 "jobs" : [
                                     { jobspec } | [ {jobspec}, ... ] ,
-                                        jobspec(s) to submit on first (usually newest) file/fileset
+                                        jobspec(s) to submit on first (usually newest) file/fileset in the list(s)
                                     ,   
                                         {} | [{},...]
                                         jobspec(s) to submit on next file/fileset...
                                     , ..... ,
                                         {} | [{},...]
-                                        last jobspec(s) in list will be submitted on all other unprocessed files
+                                        last jobspec(s) will be submitted on all other unprocessed files
                                 ]
 
                                 if a jobspec is empty or null, do nothing.
@@ -95,7 +96,8 @@ def usage():
                                 if a job is a list of jobspecs:
                                     the first jobspec will be submitted for files from the first list,    
                                     the second jobspec for the second list, and so on.
-                                    files in lists with no jobspec or an empty/null jobspec will be immediately marked as processed
+                                    the highest jobspec will be used for any additional lists.
+                                    lists with an empty/null jobspec will have the files immediately marked as processed
         
                                 in jobspecs, the following formats are available for strings:
                                     %(name)s        name of this watch
@@ -123,8 +125,8 @@ def usage():
 """)
 
 def apply_config(**cfg):
-    global CFG,CLIENT,WATCH
-    logging.info('reloading config')
+    global CFG,CLIENT,WATCH,logger
+    logger.info('reloading config')
     CFG.update(cfg)
     #load config defaults
     defaults=CFG.get('defaults',{})
@@ -147,7 +149,7 @@ def apply_config(**cfg):
         #apply watch config
         wcfg.update(watch[w])
         if w not in WATCH: #add new
-            logging.info('adding watch %s'%w)
+            logger.info('adding watch %s'%w)
             WATCH[w]=Watch(w,client=CLIENT,**wcfg)
         else: WATCH[w].config(**wcfg) #reconfigure existing
 
@@ -155,24 +157,27 @@ def stop_watch(w):
     global WATCH
     wt=WATCH[w]
     wt.shutdown.set()
-    logging.info('stopping %s'%wt.name)
+    logger.info('stopping %s'%wt.name)
     wt.join()
     del WATCH[w]
 
 def signal_stop(*args):
-    global SHUTDOWN
-    logging.debug(args)
+    global SHUTDOWN,logger
+    logger.debug(args)
     SHUTDOWN.set()
 
 def signal_reload(*args):
-    logging.debug(args)
+    logger.debug(args)
     apply_config(**config())
 
 def config():
+    global logger
     cfgargs,args=cmdline_parser(sys.argv[1:])
     cfg=read_cfg_files(args)
     cfg.update(cfgargs)
     logging.basicConfig(**cfg.get('logging',{'level':logging.INFO}))
+    logger=logging.getLogger(name=cfg.get('name',os.path.basename(sys.argv[0])))
+
     return cfg
 
 
@@ -193,7 +198,7 @@ while not SHUTDOWN.is_set():
         paths=[w.path for w in WATCH.values()]
         for path in paths:
             if SHUTDOWN.is_set(): break
-            logging.debug('cleaning up %s'%path)
+            logger.debug('cleaning up %s'%path)
             hidden_files=glob.glob(os.path.join(path,'._*'))
             for hf in hidden_files:
                 if SHUTDOWN.is_set(): break
@@ -201,9 +206,9 @@ while not SHUTDOWN.is_set():
                 file='.'.join( os.path.split(hf)[1].split('_',4)[3].split('.')[:-1] )
                 try:
                     if not os.path.exists(os.path.join(path,file)):
-                        logging.debug('%s %s does not exist, removed %s'%(path,file,hf))
+                        logger.debug('%s %s does not exist, removed %s'%(path,file,hf))
                         os.unlink(hf)
-                except Exception as e: logging.debug(e)
+                except Exception as e: logger.debug(e)
             time.sleep(1)
         c=0
         #interruptible sleep until next cleanup
@@ -217,4 +222,5 @@ while not SHUTDOWN.is_set():
 for w in list(WATCH.keys()): stop_watch(w)
 
 #close client to ensure state is synced
+logger.info('shutting down')
 CLIENT.close()
