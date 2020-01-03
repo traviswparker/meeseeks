@@ -68,7 +68,7 @@ class Watch(threading.Thread):
             if type(jobspec) is not list: jobspec=[jobspec] #make single jobspec a list
             if file: self.logger.info('starting job %s_%s'%(index,file.name))
             else: self.logger.info('starting job %s'%index)
-            sbindex=min(subindex,len(jobspec)-1) #get matching or highest jobspec
+            subindex=min(subindex,len(jobspec)-1) #get matching or highest jobspec
             jobspec=jobspec[subindex]
             if jobspec:
                 jobspec=jobspec.copy() #don't modify configured spec
@@ -76,6 +76,7 @@ class Watch(threading.Thread):
                 c.update(**kwargs) #get extra jobargs
                 #add in file
                 jid=str(index)
+                c.update(index=jid)
                 if file: 
                     c.update(filename=file.name,file=file.path)
                     #add in filename parts
@@ -132,16 +133,18 @@ class Watch(threading.Thread):
 
             #clean up jobs first
             for jid,job in self.__jobs.copy().items():
-                if job.poll(): #job exited
-                    if job.multi: #this is a multi-node job, we can't get a single state
-                        self.logger.info('job %s: %s exited'%(jid,len(job.poll())))
-                        job.kill() #stop the remaining parts so it can be restarted
-                    else:
-                        self.logger.info('job %s %s'%(jid,job.state))
+                if job.poll(): #a job exited
+                    if job.multi: #this is a multi-node job, we don't have a single state
+                        #if any job failed, kill and restart the multi-job
+                        if any(j.get('state')=='failed' for j in job.poll().values()): 
+                            self.logger.warning('job %s failed'%jid)
+                            job.kill() #stop the remaining parts so it can be restarted
+                    elif job.state != 'done': self.logger.warning('job %s %s'%(jid,job.state))
+                    if not job.is_alive():
                         if '_' in jid: #set file status if this job is for a file
                             index,filename=jid.split('_',2)
                             self.set_file_status(index,filename,job.poll())
-                    del self.__jobs[jid]
+                        del self.__jobs[jid]
 
             if globs: #if we are tracking files
                 rescan_count=(rescan_count+1) % self.rescan
@@ -189,10 +192,10 @@ class Watch(threading.Thread):
                                     if split and match:
                                         mpat=split.join(fparts[:match]) #generate match string
                                         fileset={} #files across lists that match 
-                                        for glob,files in self.__files.items(): #check across lists
-                                            for file in files:
-                                                if file.name.startswith(mpat):
-                                                    fileset[glob]=file #found it
+                                        for g,files in self.__files.items(): #check across lists
+                                            for f in files:
+                                                if f.name.startswith(mpat):
+                                                    fileset[g]=f #found it
                                                     break
                                         logging.debug('fileset %s matching %s %s'%(index,mpat,fileset))
                                         if len(fileset) == len(globs): #complete fileset

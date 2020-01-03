@@ -91,7 +91,7 @@ class Job():
         '''start the job(s) by submitting it to the client
         returns job id/job ids from submit'''
         if self.jid: return False #job already started
-        r=list(self.client.submit_job(**self.info).keys())
+        r=list(self.client.submit_job(state='new',**self.info).keys())
         if self.multi:
             self.info={} #clear cache to remove submit data
             self.jid=r

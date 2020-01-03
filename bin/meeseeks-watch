@@ -106,7 +106,8 @@ def usage():
                                     %(fileset)s     all filenames in the fileset
                                     %(fileset<n>)s  if a fileset, will be list<n> filename
                                     %(<n>)s         part <n> of the filename
-                                    %(<k>)s         key <k> in the watch config
+                                    %(index)s       job index, %(name)s_%(index)s_%(filename)s can be used as a job id
+                                    %(<k>)s         key <k> in the watch config, such as %(path)s
 
                                 When a job ends, the job result JSON is written to a hidden file in <path> named:
                                 ._<name>_<n>_<filename>.<state>
