@@ -22,107 +22,39 @@ SHUTDOWN=threading.Event()
 def usage():
 
     print("""
-    meeseeks-watch [key=value]... [config-file]
+meeseeks-watch [key=value]... [config-file]
+    watches files, submits jobs
 
-    watches files, submits jobs on them
+JSON config format, can also be specified on command line as key.subkey..=value|value,value
+{
+    "name" : <string> name for logging
+    "apply" : <template> apply this template to all watches
+    "defaults" : { defaults for all other sections },
+    "client" : { configuration for connecting to meeseeks },
+    "template" : {
+        null|"<name>": { defines a watch template, see watch spec }
+    },
+    "watch" : {
+        "<name>": { 
+            "template": <name> applies template <name> to this watch config.
+            "path" : <path to watch>
+            "glob" : <pattern> | [ <pattern>, ... ]
+            
+            (see README for all watch options)
 
-    JSON config format, can also be specified on command line as key.subkey..=value|value,value
-
-    {
-        "defaults" : { ... defaults for all other sections ... },
-
-        "client" : { ... configuration for connecting to meeseeks ... },
-        
-        "template" : {
-                    null|"<name>": { defines a watch template, see spec for watch. 
-                                     A template named null will be applied to all watch configs }
-        },
-
-        "watch" : {
-                    "<name>": { 
-                                "template": <name> applies template <name> to this watch config. 
-                                                   Keys defined here override template
-                                "path" : <path to watch>
-                                "glob" : <pattern> | [ <pattern>, ... ]
-                                         Watches the files matching the pattern. 
-                                         A list of patterns can be specified to watch multiple lists of files
-                                         Use a glob of "*" for all files
-                                         If no globs are defined, this watch will simply ensure the jobs defined are always running
-                                "reverse" : <bool> files are ASCII sorted Z->A, 9->0 to handle datestamps newest to oldest. 
-                                                    If true, reverse sort the files (oldest to newest)
-                                "split" : <character> optional character to split filenames on to generate match parts.
-                                "fileset" : <int> match filename parts across lists to create filesets
-                                                    a fileset is complete when the first <int> parts of a filename in each list matches.
-                                                    files will not be processed until a complete fileset exists. 
-                                                    For example,
-                                                    glob: [*.foo,*.bar,*.baz]
-                                                    split: .
-                                                    match: 2
-                                                    the set will be complete if we have 20200101.00.foo, 20200101.00.bar, 20200101.00.baz
-                                          default is 0 (no filesets)
-                                "updated" : <bool> if set, files will be reprocessed if modtime changes. Default false.
-                                                   If multiple jobs are defined, only the first will be run on file update.
-                                "retry" : <bool> if true, files with failed jobs will be reprocessed. Default true.
-                                                 killed jobs will never be retried
-                                "run_all" : <bool> if true, unprocessed jobs from 0 to the file's index will be sequentially submitted.
-                                                   if false, only the unprocessed job for the file's index will be submitted.
-                                                   default true
-                                "min_age" : <int> if set, file must be at least <int> seconds old to be considered
-                                "max_age" : <int> if set, file must be newer than <int> seconds to be considered
-                                "max_index": <int> if set, maximum index down the list we will submit jobs for.
-                                "refresh" : <int> interval in seconds running jobs are checked and file status updated, default 10
-                                "rescan"  : <int> interval in seconds files in path are rescanned, default 60
-
-                                "jobs" : [
-                                    { jobspec } | [ {jobspec}, ... ] ,
-                                        jobspec(s) to submit on first (usually newest) file/fileset in the list(s)
-                                    ,   
-                                        {} | [{},...]
-                                        jobspec(s) to submit on next file/fileset...
-                                    , ..... ,
-                                        {} | [{},...]
-                                        last jobspec(s) will be submitted on all other unprocessed files
-                                ]
-
-                                if a jobspec is empty or null, do nothing.
-                                if only one job is defined, this job will be run on all files
-                                if multiple jobs are defined, files will have the jobs run on them in sequence as more files appear
-
-                                for example, when a new file[0] appears:
-                                    jobs[0] will run on new file[0]
-                                    previously processed file[0] will now be file[1], so jobs[1] will run on it
-                                    file[1] will now be file[2] but if jobs[2] does not exist nothing happens.
-
-                                if a job is a list of jobspecs:
-                                    the first jobspec will be submitted for files from the first list,    
-                                    the second jobspec for the second list, and so on.
-                                    the highest jobspec will be used for any additional lists.
-                                    lists with an empty/null jobspec will have the files immediately marked as processed
-        
-                                in jobspecs, the following formats are available for strings:
-                                    %(name)s        name of this watch
-                                    %(filename)s    filename
-                                    %(file)s        full path to file including filename
-                                    %(fileset)s     all filenames in the fileset
-                                    %(fileset<n>)s  if a fileset, will be list<n> filename
-                                    %(<n>)s         part <n> of the filename
-                                    %(index)s       job index, %(name)s_%(index)s_%(filename)s can be used as a job id
-                                    %(<k>)s         key <k> in the watch config, such as %(path)s
-
-                                When a job ends, the job result JSON is written to a hidden file in <path> named:
-                                ._<name>_<n>_<filename>.<state>
-                                <name> is the name of the watch
-                                <n> is the index of the job in the jobspec list
-                                <filename> is the filename
-                                <state> is the finished job state, typically "done" if successful. 
-                                        If a .done (or .failed if retry=0) file exists the file is considered processed
-
-                                If updated=True, last file mtime is tracked in ._<name>_<n>_<filename>.mtime
-
-                                hidden ._ files will be deleted when associated files are deleted, unless cleanup=0
-                    } 
-        }
+            "jobs" : [
+                { jobspec } | [ {jobspec}, ... ] ,
+                    jobspec(s) to submit on first (usually newest) file/fileset in the list(s)
+                ,   
+                    {} | [{},...]
+                    jobspec(s) to submit on next file/fileset...
+                , ..... ,
+                    {} | [{},...]
+                    last jobspec(s) will be submitted on all other unprocessed files
+            ]
+        } 
     }
+}
 """)
 
 def apply_config(**cfg):
@@ -142,14 +74,18 @@ def apply_config(**cfg):
 
     #stop/start watch threads
     watch=cfg.get('watch',{})
+    apply=cfg.get('apply')
     for w in WATCH.copy(): #stop removed watch
+        if apply: w='%s-%s'%(apply,w)
         if w not in watch: stop_watch(w)
     for w in watch.keys():
         wcfg=defaults.copy()
         #apply template, template[None] will apply to all
-        wcfg.update( cfg.get('template',{}).get( watch[w].get('template') ) ) 
-        #apply watch config
+        if apply: wcfg.update(cfg.get('template',{}).get(apply))
+        else: wcfg.update( cfg.get('template',{}).get( watch[w].get('template'),{} ) ) 
+        #apply config
         wcfg.update(watch[w])
+        if apply: w='%s-%s'%(apply,w)
         if w not in WATCH: #add new
             logger.info('adding watch %s'%w)
             WATCH[w]=Watch(w,client=CLIENT,**wcfg)
