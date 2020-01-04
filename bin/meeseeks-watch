@@ -75,17 +75,20 @@ def apply_config(**cfg):
     #stop/start watch threads
     watch=cfg.get('watch',{})
     apply=cfg.get('apply')
+    if apply:
+        try: 
+            logger.info('applying template %s'%apply)
+            watch=dict(('%s-%s'%(apply,w),d) for (w,d) in watch.items())
+            for d in watch.values(): d.update(cfg['template'][apply])
+        except Exception as e: logger.error(e)
     for w in WATCH.copy(): #stop removed watch
-        if apply: w='%s-%s'%(apply,w)
         if w not in watch: stop_watch(w)
     for w in watch.keys():
         wcfg=defaults.copy()
         #apply template, template[None] will apply to all
-        if apply: wcfg.update(cfg.get('template',{}).get(apply))
-        else: wcfg.update( cfg.get('template',{}).get( watch[w].get('template'),{} ) ) 
+        wcfg.update(cfg.get('template',{}).get(watch[w].get('template'),{})) 
         #apply config
         wcfg.update(watch[w])
-        if apply: w='%s-%s'%(apply,w)
         if w not in WATCH: #add new
             logger.info('adding watch %s'%w)
             WATCH[w]=Watch(w,client=CLIENT,**wcfg)
