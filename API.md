@@ -15,7 +15,7 @@
         hold: false|true #optional, if true job will be assigned to a node but not run until set false
         restart: false|true    #if true, job will be restarted on the same node if it exits with success (rc == 0)
         retries: int           #if >0, job will be restarted a max of retries if it exits with failure (rc != 0)
-        resubmit:              #if true, when job is finished (done or failed), resubmit it to the submit_node
+        resubmit: false|true   #if true, when job is finished (done or failed), resubmit it to the submit_node
         config: dict           #pool/task-specific configuration (default sets Popen arguments)
         tags: list             #list of tags, can be matched in query with tag=
         state: new|killed      #set state of job, killed will stop running job, new will restart finished job.

@@ -71,15 +71,16 @@ The config sections, objects, and defaults are as follows:
         { <poolname>:{
             slots: 0 
                 # if > 0 sets limit of how many jobs can run simultaneously
-                # 0 sets no limit, but nodes with free slots will be preferred
-                # -1 drains pool (no new jobs will be assigned)
-            max_runtime: null # if set, limit of how long a job can run for
+                # 0 sets no limit, but nodes with slots will be preferred
+            hold: false # if true, jobs will not start until hold=false
+            drain: false # if true, no new jobs will be assigned to this pool
+            runtime: null # if set, limit of how long a job can run for
             update: 30 # how often in seconds the state of running jobs is updated to prevent expiration
             plugin: <path.module.Class> to provide this pool instance
         } , ... }
 
-        use_loadavg:  #if set true, load average will be used to select nodes  vs. free pool slots
-        wait_in_pool: #if set true, jobs will be assigned to nodes with full pools and run when a slot is free
+        use_loadavg:  false #if set true, load average will be used to select nodes  vs. free pool slots
+        wait_in_pool: false #if set true, jobs will be assigned to nodes with full pools and run when a slot is free
                       #if false (default) jobs will remain unassigned until a slot is free
     }
 
@@ -120,11 +121,8 @@ example:
         "runtime: int  #optional, maximum runtime of the job
         "hold": false|true #optional, if true job will be assigned to a node but not run until set false
         "restart": false|true    #if true, job will be restarted on the same node if it exits with success (rc == 0)
-        "retries": int,          #if >0, job will be restarted a max of retrues on the same node if it exits with failure (rc != 0)
-                                      # if a node fails, the jobs running on it will not be updated and will expire
-                                      # these jobs will be failed. If resries is set they will be retried.
-                                      # if a nodelist is provided, the job will be reassigned to the first node in the list
-                                      # else, the job will wait for the assigned node
+        "retries": int          #if >0, job will be restarted a max of retrues on the same node if it exits with failure 
+        "resubmit": false|true   #if true, when job is finished (done or failed), resubmit it to the submit_node
         "state": {new|killed}    #set state of job, killed will stop running job, new will restart finished job
         "tags": [...]            #list of tags, can be matched in query with tag=
       }
