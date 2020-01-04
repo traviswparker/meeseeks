@@ -28,7 +28,7 @@ meeseeks-watch [key=value]... [config-file]
 JSON config format, can also be specified on command line as key.subkey..=value|value,value
 {
     "name" : <string> name for logging
-    "apply" : <template> apply this template to all watches
+    "apply" : <template> set template for all watches
     "defaults" : { defaults for all other sections },
     "client" : { configuration for connecting to meeseeks },
     "template" : {
@@ -36,7 +36,7 @@ JSON config format, can also be specified on command line as key.subkey..=value|
     },
     "watch" : {
         "<name>": { 
-            "apply": <name> applies template <name> to this watch config.
+            "template": <name> applies a template to this watch config.
             "path" : <path to watch>
             "glob" : <pattern> | [ <pattern>, ... ]
             
@@ -72,21 +72,24 @@ def apply_config(**cfg):
         CLIENT=Client(**ccfg)
         CLIENT.wait() #wait for the client to sync initial state
 
-    #stop/start watch threads
+    #configure watch threads
     watch=cfg.get('watch',{})
+    #set global template
     apply=cfg.get('apply')
     if apply:
         try: 
             logger.info('applying template %s'%apply)
             watch=dict(('%s-%s'%(apply,w),d) for (w,d) in watch.items())
-            for d in watch.values(): d.update(cfg['template'][apply])
+            for d in watch.values(): d.update(template=apply)
         except Exception as e: logger.error(e)
-    for w in WATCH.copy(): #stop removed watch
+
+    for w in WATCH.copy(): #stop removed watches
         if w not in watch: stop_watch(w)
-    for w in watch.keys():
+    
+    for w in watch.keys(): #start/config watches
         wcfg=defaults.copy()
         #apply template, template[None] will auto-apply to all
-        wcfg.update(cfg.get('template',{}).get(watch[w].get('apply'),{})) 
+        wcfg.update(cfg.get('template',{}).get(watch[w].get('template'),{})) 
         #apply config
         wcfg.update(watch[w])
         if w not in WATCH: #add new

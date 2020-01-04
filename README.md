@@ -254,7 +254,7 @@ killed: job was killed, rc may be set if job was running.
 
         "watch" : {
             "<name>": { 
-                "apply": <name> applies template <name> to this watch config. 
+                "template": <name> applies template <name> to this watch config. 
                     Keys defined here override template
                 "path" : <path to watch>
                 "glob" : <pattern> | [ <pattern>, ... ]
