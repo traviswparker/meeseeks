@@ -32,11 +32,11 @@ JSON config format, can also be specified on command line as key.subkey..=value|
     "defaults" : { defaults for all other sections },
     "client" : { configuration for connecting to meeseeks },
     "template" : {
-        null|"<name>": { defines a watch template, see watch spec }
+        "<name>": { defines a watch template, see watch spec }
     },
     "watch" : {
         "<name>": { 
-            "template": <name> applies template <name> to this watch config.
+            "apply": <name> applies template <name> to this watch config.
             "path" : <path to watch>
             "glob" : <pattern> | [ <pattern>, ... ]
             
@@ -85,8 +85,8 @@ def apply_config(**cfg):
         if w not in watch: stop_watch(w)
     for w in watch.keys():
         wcfg=defaults.copy()
-        #apply template, template[None] will apply to all
-        wcfg.update(cfg.get('template',{}).get(watch[w].get('template'),{})) 
+        #apply template, template[None] will auto-apply to all
+        wcfg.update(cfg.get('template',{}).get(watch[w].get('apply'),{})) 
         #apply config
         wcfg.update(watch[w])
         if w not in WATCH: #add new

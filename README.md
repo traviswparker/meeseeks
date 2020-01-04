@@ -243,29 +243,19 @@ killed: job was killed, rc may be set if job was running.
     {
         "defaults" : { ... defaults for all other sections ... },
 
-        "apply" : <template> apply this template to all watches,
+        "apply" : <template> apply this template globally to all watches,
 
         "client" : { ... configuration for connecting to meeseeks ... },
         
         "template" : {
-                    null|"<name>": { defines a watch template, see spec for watch. 
-                                     A template named null will be applied to all watch configs }
+            null|"<name>": { defines a watch template, see spec for watch. 
+                            A template with a null name will be auto-applied to all watches }
         },
 
         "watch" : {
             "<name>": { 
-                "template": <name> applies template <name> to this watch config. 
+                "apply": <name> applies template <name> to this watch config. 
                     Keys defined here override template
-                    to apply a template to a list of paths, define
-                    "watch": {
-                        "name1":{ "path":"path1" },
-                        "name2":{ "path":"path2" },
-                        ...
-                    }
-                    in a config file with all other config in templates.
-                    now apply selected template with:
-                    meeseeks-watch apply=<template> templates.cfg paths.cfg
-                    if a default template is set, watch names will become <template>-<name>
                 "path" : <path to watch>
                 "glob" : <pattern> | [ <pattern>, ... ]
                     Watches the files matching the pattern. 
@@ -346,3 +336,13 @@ killed: job was killed, rc may be set if job was running.
 
     If updated=True, last file mtime is tracked in ._<name>_<n>_<filename>.mtime
     hidden ._ files will be deleted when associated files are deleted, unless cleanup=0
+
+    to apply the same watch template to a list of paths, define only the paths in config:
+    "watch": {
+        "name1":{ "path":"path1" },
+        "name2":{ "path":"path2" },
+        ...
+    }
+    and apply template globally with:
+        meeseeks-watch apply=<template> templates.cfg paths.cfg
+    watch names will be set to <template>-<name>
