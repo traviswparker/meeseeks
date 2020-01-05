@@ -194,9 +194,9 @@ class Box:
                     #handle config jobs assigned to us
                     for jid,job in self.state.get(node=self.name,pool='__config').items():
                         if job['state'] == 'new':
-                            self.logger.info('got config %s: %s'%(jid,job))
+                            self.logger.info('got config %s: %s'%(jid,job['args']))
                             if job['args']: #if changes were pushed
-                                self.cfg.update(job['args'])
+                                self.cfg=merge(self.cfg,job['args'])
                                 self.restart.set() #main loop breaks and apply_config is called
                             #return current config in args
                             self.state.update_job(jid,args=self.cfg,state='done')
