@@ -274,6 +274,7 @@ class State(threading.Thread):
                                     else: 
                                         jobargs['node']=job.get('submit_node',False) #reset to submit node if set
                                         jobargs['active']=False # clear active state if removed from node
+                                        jobargs['error']=None #clear error state
                                 else: del jobargs['state'] #other state change not allowed
                         #active jobs can only be killed, and cannot be moved
                         else:
@@ -293,6 +294,7 @@ class State(threading.Thread):
                                 'state':'new',
                                 'start_count':0,             
                                 'fail_count':0,
+                                'error':None
                             }
                     job.update(**jobargs)
                     self.__update_job(jid,**job)

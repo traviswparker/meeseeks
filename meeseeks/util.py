@@ -21,7 +21,7 @@ def merge(a, b):
     a=a.copy() #operate on copy of dest dict so we can delete keys
     for key in sorted(b): #process !keys before others
         if str(key).startswith('!'): #delete key
-            if key in a: del a[key[1:]]
+            if key[1:] in a: del a[key[1:]]
             continue
         elif key in a: #update
             #recurse into nested

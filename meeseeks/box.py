@@ -291,7 +291,7 @@ class Box:
             cfg=request['config']
             if cfg: #if changes were pushed
                 self.logger.info('got config request: %s'%cfg)
-                self.cfg.update(request['config'])
+                self.cfg=merge(self.cfg,request['config'])
                 self.restart.set() #main loop breaks and apply_config is called
             response['config']=self.cfg 
         # Does not format nicely via netcat, because of newlines/tabs

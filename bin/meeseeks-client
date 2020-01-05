@@ -84,7 +84,9 @@ def show(client,args,**kwargs):
             if kwpool and p != kwpool: continue
             if n in pnodes: node.setdefault('free',{})[p]=pnodes[n]
         jobs=client.query(node=n,**kwargs)
-        for jid,job in jobs.items(): node.setdefault('jobs',{}).setdefault(job['pool'],{})[jid]=job
+        for jid,job in jobs.items(): 
+            if job['pool'] == '__config': continue
+            node.setdefault('jobs',{}).setdefault(job['pool'],{})[jid]=job
     #now we put nodes under other nodes
     def _tree(s):
         for n in list(s.keys()):
