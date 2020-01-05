@@ -6,16 +6,16 @@ do
 done
 
 test() {
-    meeseeks-watch name=$1 apply=$1 \
-    watch.01.path=`pwd`/01 \
-    watch.02.path=`pwd`/02 \
-    watch.03.path=`pwd`/03 \
-    watch.04.path=`pwd`/04 \
-    watch.05.path=`pwd`/05 \
-    watch.06.path=`pwd`/06 \
-    watch.07.path=`pwd`/07 \
-    watch.08.path=`pwd`/08 \
-    watch.09.path=`pwd`/09 \
+    meeseeks-watch defaults.template=$1 \
+        watch.01.path=`pwd`/01 \
+        watch.02.path=`pwd`/02 \
+        watch.03.path=`pwd`/03 \
+        watch.04.path=`pwd`/04 \
+        watch.05.path=`pwd`/05 \
+        watch.06.path=`pwd`/06 \
+        watch.07.path=`pwd`/07 \
+        watch.08.path=`pwd`/08 \
+        watch.09.path=`pwd`/09 \
     watch.cfg 
 }
 
@@ -23,4 +23,4 @@ test job &
 test file &
 test fileset &
 test fileupdate &
-meeseeks-watch name=multi apply=multi watch.01= watch.cfg
+meeseeks-watch defaults.template=multi watch.01= watch.cfg

@@ -12,7 +12,7 @@ import socketserver
 from .state import State
 from .node import Node
 from .pool import Pool
-from .util import create_ssl_context, import_plugin
+from .util import *
 
 class RequestHandler(socketserver.StreamRequestHandler):
     '''control socket request handler'''
@@ -62,13 +62,12 @@ class Box:
 
     def apply_config(self,**cfg):
         self.logger.info('reloading config')
-        self.cfg.update(cfg)
+        self.cfg=merge(self.cfg,cfg)
         #load config defaults
         self.defaults=self.cfg.get('defaults',{})
 
         #init state
-        scfg=self.defaults.copy()
-        scfg.update(self.cfg.get('state',{}))
+        scfg={**self.defaults, **self.cfg.get('state',{})}
         if not self.state: self.state=State(self.name,**scfg)
         else: self.state.config(**scfg)
 
@@ -77,8 +76,7 @@ class Box:
         for p in self.pools.copy(): 
             if p not in pools: self.stop_pool(p)
         for p in pools.keys():
-            pcfg=self.defaults.copy()
-            pcfg.update(pools[p])
+            pcfg={**self.defaults, **pools[p]}
             #load plugin if specified
             if 'plugin' in pcfg:
                 pool_class=import_plugin(pcfg['plugin'])
@@ -95,8 +93,7 @@ class Box:
             if n!=self.name and n not in nodes: self.stop_node(n)
         for n in nodes.keys():
             if n==self.name: continue #we don't need to talk to ourself 
-            ncfg=self.defaults.copy()
-            ncfg.update(nodes[n])
+            ncfg={**self.defaults, **nodes[n]}
             if n not in self.nodes:
                 self.logger.info('adding node %s'%n)
                 self.nodes[n]=Node(self.name,n,self.state,**ncfg)

@@ -4,7 +4,7 @@ import sys
 import logging
 import signal
 
-from meeseeks.util import cmdline_parser, read_cfg_files
+from meeseeks.util import *
 from meeseeks.box import Box
 
 def signal_stop(*args):
@@ -17,8 +17,7 @@ def signal_reload(*args):
 
 def config():
     cfgargs,args=cmdline_parser(sys.argv[1:])
-    cfg=read_cfg_files(args)
-    cfg.update(cfgargs)
+    cfg=merge(read_cfg_files(args),cfgargs)
     logging.basicConfig(**cfg.get('logging',{'level':logging.INFO}))
     return cfg
 

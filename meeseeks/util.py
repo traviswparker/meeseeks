@@ -15,12 +15,30 @@ def import_plugin(plugin):
         return None
     return getattr (m,plugin.split('.')[-1])
 
+def merge(a, b):
+    '''merges b into a if possible, replacing non-dict values
+        !key in b will delete key from a'''
+    a=a.copy() #operate on copy of dest dict so we can delete keys
+    for key in sorted(b): #process !keys before others
+        if str(key).startswith('!'): #delete key
+            if key in a: del a[key[1:]]
+            continue
+        elif key in a: #update
+            #recurse into nested
+            if isinstance(a[key], dict) and isinstance(b[key], dict):
+                a[key]=merge(a[key], b[key])
+            #replace values
+            else: a[key]=b[key]
+        #else add key
+        else: a[key] = b[key]
+    return a #return merged dict
+
 def read_cfg_files(args):
     cfg={}
     if type(args) is not list: args=[args]
     for f in args: 
         try:
-            with open(f) as fh: cfg.update(json.load(fh))
+            with open(f) as fh: cfg=merge(cfg,json.load(fh))
         except Exception as e:
             print (e,file=sys.stderr)
     return cfg

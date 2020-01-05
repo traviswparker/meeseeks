@@ -239,9 +239,8 @@ killed: job was killed, rc may be set if job was running.
     JSON config format, can also be specified on command line as key.subkey..=value|value,value
 
     {
-        "defaults" : { ... defaults for all other sections ... },
-
-        "apply" : <template> apply this template globally to all watches,
+        "defaults" : { ... defaults for all other sections ... 
+                       "template":<template> will set a default template for all watches},
 
         "client" : { ... configuration for connecting to meeseeks ... },
         
@@ -253,7 +252,7 @@ killed: job was killed, rc may be set if job was running.
         "watch" : {
             "<name>": { 
                 "template": <name> applies template <name> to this watch config. 
-                    Keys defined here override template
+                    Keys defined in watch override keys in template
                 "path" : <path to watch>
                 "glob" : <pattern> | [ <pattern>, ... ]
                     Watches the files matching the pattern. 
@@ -342,5 +341,5 @@ killed: job was killed, rc may be set if job was running.
         ...
     }
     and apply template globally with:
-        meeseeks-watch apply=<template> templates.cfg paths.cfg
-    watch names will be set to <template>-<name>
+        meeseeks-watch defaults.template=<template> templates.cfg paths.cfg
+    if default template is set, watch names will be prefixed to <template>-<name>

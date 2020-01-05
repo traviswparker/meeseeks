@@ -8,7 +8,7 @@ import time
 import threading
 import glob
 
-from meeseeks.util import cmdline_parser, read_cfg_files
+from meeseeks.util import *
 from meeseeks.client import Client
 from meeseeks.watch import Watch
 
@@ -28,8 +28,8 @@ meeseeks-watch [key=value]... [config-file]
 JSON config format, can also be specified on command line as key.subkey..=value|value,value
 {
     "name" : <string> name for logging
-    "apply" : <template> set template for all watches
-    "defaults" : { defaults for all other sections },
+    "defaults" : { defaults for all other sections,
+                   "template":<template> will set a default name and template for all },
     "client" : { configuration for connecting to meeseeks },
     "template" : {
         "<name>": { defines a watch template, see watch spec }
@@ -60,38 +60,35 @@ JSON config format, can also be specified on command line as key.subkey..=value|
 def apply_config(**cfg):
     global CFG,CLIENT,WATCH,logger
     logger.info('reloading config')
-    CFG.update(cfg)
+    CFG=merge(CFG,cfg)
     #load config defaults
     defaults=CFG.get('defaults',{})
 
     #init client
     if not CLIENT: 
-        ccfg={'refresh':10}
-        ccfg.update(defaults)
-        ccfg.update(cfg.get('client',{}))
+        ccfg={'refresh':10,**defaults,**cfg.get('client',{})}
         CLIENT=Client(**ccfg)
         CLIENT.wait() #wait for the client to sync initial state
 
     #configure watch threads
     watch=cfg.get('watch',{})
-    #set global template
-    apply=cfg.get('apply')
-    if apply:
-        try: 
-            logger.info('applying template %s'%apply)
-            watch=dict(('%s-%s'%(apply,w),d) for (w,d) in watch.items())
-            for d in watch.values(): d.update(template=apply)
-        except Exception as e: logger.error(e)
+    #prefix names and apply default template if set
+    if 'template' in defaults: 
+        logger.info('set default template to %s'%defaults['template'])
+        watch=dict( (defaults['template']+'-'+w,
+                     {'template':defaults['template'],**d}) 
+                for (w,d) in watch.items())
 
     for w in WATCH.copy(): #stop removed watches
         if w not in watch: stop_watch(w)
     
     for w in watch.keys(): #start/config watches
-        wcfg=defaults.copy()
-        #apply template, template[None] will auto-apply to all
-        wcfg.update(cfg.get('template',{}).get(watch[w].get('template'),{})) 
-        #apply config
-        wcfg.update(watch[w])
+        #apply template if set in watch config, 
+        #if template[None] exists it will auto-apply if none set
+        wcfg={  **defaults,
+                **cfg.get('template',{}).get(watch[w].get('template'),{}),
+                **watch[w]
+            } 
         if w not in WATCH: #add new
             logger.info('adding watch %s'%w)
             WATCH[w]=Watch(w,client=CLIENT,**wcfg)
@@ -117,10 +114,13 @@ def signal_reload(*args):
 def config():
     global logger
     cfgargs,args=cmdline_parser(sys.argv[1:])
-    cfg=read_cfg_files(args)
-    cfg.update(cfgargs)
+    cfg=merge(cfgargs,read_cfg_files(args))
     logging.basicConfig(**cfg.get('logging',{'level':logging.INFO}))
-    logger=logging.getLogger(name=cfg.get('name',os.path.basename(sys.argv[0])))
+    #set name to name if specified, else default template, else executable
+    name=cfg.get('name',
+                  cfg.get('defaults',{}).get('template',
+                    os.path.basename(sys.argv[0])))
+    logger=logging.getLogger(name=name)
     return cfg
 
 

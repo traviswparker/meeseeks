@@ -7,7 +7,7 @@ import json
 import time
 
 from meeseeks import Client
-from meeseeks.util import cmdline_parser, read_cfg_files
+from meeseeks.util import *
 
 def usage():
 
@@ -155,11 +155,11 @@ try:
     if not cmd:
         c,args=cmdline_parser(args)
         if not args: sys.exit(usage())
-        cfg.update(c)
+        cfg=merge(cfg,c)
         cmd,args=args[0],args[1:] #end of options
     
     #load cfg files
-    if 'file' in cfg: cfg.update(read_cfg_files(cfg['file']))
+    if 'file' in cfg: cfg=merge(cfg,read_cfg_files(cfg['file']))
     
     #parse post-cmd args
     kwargs,args=cmdline_parser(args)
