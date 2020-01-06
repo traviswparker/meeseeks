@@ -86,7 +86,7 @@ class State(threading.Thread):
         self.__load_state()
         self.start()
 
-    def config(self,expire=60,expire_active_jobs=True,timeout=60,history=None,file=None,checkpoint=None,**cfg):
+    def config(self,expire=300,expire_active_jobs=True,timeout=60,history=None,file=None,checkpoint=None,**cfg):
         with self.__lock:
             if expire: self.expire=int(expire)
             if timeout: self.timeout=int(timeout)
@@ -319,12 +319,6 @@ class State(threading.Thread):
                         if job['seq'] > self.__hist_seq and job['state'] in self.JOB_INACTIVE:
                             self.write_history(jid)
                     self.__hist_seq=self.__seq
-
-                    #keep pending jobs from expiring
-                    for jid,job in self.__jobs.items():
-                        #if job is new/inactive it is not in a pool 
-                        if job['state'] == 'new' and not job.get('active') and time.time()-job['ts'] > self.timeout:
-                            self.__update_job(jid) #touch the job
 
                     #scan for expired jobs
                     for jid,job in self.__jobs.copy().items():

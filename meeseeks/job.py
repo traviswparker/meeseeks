@@ -11,7 +11,7 @@ from .util import cmdline_parser
 
 global _CLIENT, _CLIENT_CONF, _NOTIFY
 #default global client conf
-_CLIENT_CONF=dict( refresh=10 )
+_CLIENT_CONF=dict(refresh=1)
 _CLIENT_CONF.update(cmdline_parser(os.getenv('MEESEEKS_CONF','').split())[0])
 _CLIENT=_NOTIFY=None
 

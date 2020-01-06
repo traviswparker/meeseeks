@@ -46,27 +46,19 @@ class Client(State):
         State object's methods are available to get status and manage jobs
         to use State methods, set refresh > 0 to start node sync thread
     '''
-    def __init__(self,address=None,port=13700,timeout=10,refresh=0,poll=10,expire=60,set_global=False,**cfg):
+    def __init__(self,refresh=None,set_global=False,**cfg):
 
         #state object to cache cluster state from the node
-        if refresh:
-            State.__init__(self,None,
-                        expire=expire,
-                        expire_active_jobs=False)
+        if refresh: State.__init__(self,None,**cfg)
      
         #internal node object to communicate with the node
         #refresh defaults to 0 for client, set > 0 to start node sync thread
-        self.__node=Node(None,None,self,
-                        address=address,
-                        port=port,
-                        timeout=timeout,
-                        refresh=refresh,
-                        poll=poll,
-                        **cfg)
+        self.__node=Node(None,None,self,refresh=refresh,**cfg)
 
         #set the global client
-        global _CLIENT
-        if set_global: _CLIENT=self
+        if set_global: 
+            global _CLIENT
+            _CLIENT=self
 
     #direct request methods
     

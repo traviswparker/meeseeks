@@ -48,8 +48,8 @@ The config sections, objects, and defaults are as follows:
     }
 
     state: { #configures the state manager
-        expire: 60  # how long in seconds a job will persist without being updated
-                    # the state of completed/failed/killed jobs will be available for this long
+        expire: 300  # how long in seconds a job will persist without being updated
+                     # the state of completed/failed/killed jobs will be available for this long
         expire_active_jobs: true #if set false, active jobs will not be expired
         timeout: 60  #timeout in seconds to receive updated node status before it is marked offline
         file: <filename> #if set, save/reload state from this file)
@@ -63,7 +63,7 @@ The config sections, objects, and defaults are as follows:
             port: defaults to 13700
             ssl: {SSLContext config}
             refresh: 1 # how often in seconds we sync state
-            poll: 10 # how often in seconds we request node/pool status
+            poll: 10 # how often in seconds we request status
             timeout: 10 # timeout in seconds to connect/send/receive data
         } , ... }
 
@@ -75,13 +75,13 @@ The config sections, objects, and defaults are as follows:
             hold: false # if true, jobs will not start until hold=false
             drain: false # if true, no new jobs will be assigned to this pool
             runtime: null # if set, limit of how long a job can run for
-            update: 30 # how often in seconds the state of running jobs is updated to prevent expiration
-            plugin: <path.module.Class> to provide this pool instance
+            update: 60 # how often in seconds the state of running jobs is updated
+            plugin: optional <path.module.Class> to provide this pool instance
         } , ... }
 
-        use_loadavg:  false #if set true, load average will be used to select nodes  vs. free pool slots
-        wait_in_pool: false #if set true, jobs will be assigned to nodes with full pools and run when a slot is free
-                      #if false (default) jobs will remain unassigned until a slot is free
+    use_loadavg:  false #if set true, load average will be used to select nodes  vs. free pool slots
+    wait_in_pool: false #if set true, jobs will be assigned to nodes with full pools and run when a slot is free
+                        #if false (default) jobs will remain unassigned until a slot is free
     }
 
 config can also be provided on the command line using key.key.key=value
@@ -101,14 +101,7 @@ example:
  newline sends requests for processing.
  double newline disconnects client.
 
-    [ { "status" : {} 
-        fetch the cluster status this node knows about
-        response will be:
-        { 
-          "nodes": { nodename:{ ts:..., online:true|false, loadavg:....}, .... },
-          "pools": { poolname:{ nodename:slots_available|null, ... }, .... } 
-      } 
-
+    [ { 
       "submit" :{ 
         "id": string  #job id, optional, MUST be unique. A UUID will be generated if id is omitted
                         #if an existing job id is given, the job will be modified if possible
@@ -128,7 +121,7 @@ example:
       }
         response will be:
         {
-            "submit": the job_id:job or false if submission failed 
+            "submit": the job_id:job map or jid:false if submission failed 
             job attributes (also includes keys from submit spec):
                 node: the node the job is assigned to
                 state: the job state (new,running,done,failed,killed)
@@ -147,11 +140,27 @@ example:
                 fail_count: count of times job has failed
         } 
 
-      "query": job_id
-        response will be job dict, or false if job_id does not exist
+      "get": job_id | [job_ids] | {query spec}
+        response will be jid:job map, or false if job_id does not exist
 
-      "kill": job_id  #kills a job. 
-        response will be job dict, or false if job_id does not exist
+      "kill": job_id | [job_ids] | {query spec}  #kills a job. 
+        response will be jid:job map, or false if job_id does not exist
+
+      "nodes" : {} 
+        fetch the node status this node knows about
+        response will be:
+        { 
+          "nodes": { nodename:{ ts: , online:true|false, loadavg: , routing: [nodelist] }, .... },
+        }
+      } 
+
+      "pools" : {} 
+        fetch the pool status this node knows about
+        response will be:
+        { 
+          "pools": { poolname:{ nodename: slots, ... }, ... }
+        }
+      } 
 
       "config": {...} #push a new configuration (if provided) to the node, response is current config
                       #configuration can be pushed to remote nodes via a job in the __config pool
@@ -159,10 +168,6 @@ example:
                       #when state is 'done', job args will reflect current config
 
     } ]
-
-# sync operation
-
-Each node periodically pulls node and pool slot availability from connected nodes. This status is not just the status of the peer but also all downstream nodes it has received status from. From this we can determine which nodes are reachable via the peer. Job status for all downstream nodes are synced from the upstream node, then updates are pulled from the downstream node.
 
 # job state values
 

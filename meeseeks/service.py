@@ -188,7 +188,7 @@ class Meeseeks:
                     online=True,
                     ts=time.time(),
                     loadavg=self.get_loadavg(),
-                    routing=list(self.state.get_nodes().keys()) ) 
+                    routing=list(self.state.get_nodes().keys())) 
 
                 #scheduling logic
                 try:
@@ -202,31 +202,34 @@ class Meeseeks:
                             #return current config in args
                             self.state.update_job(jid,args=self.cfg,state='done')
 
-                    #get jobs assigned to us but to a pool we don't have
-                    #these need to be assigned to a node that can service them
-                    jobs=dict( (jid,job) for (jid,job) in self.state.get(node=self.name).items() \
-                        if job['pool'] not in self.pools.keys() )
-                    #add jobs without node assigned, these were just submitted and need routing
-                    jobs.update(self.state.get(node=False))
                     #get cluster state
                     node_status=self.state.get_nodes()
-                    #process jobs by opdest to newest submitted
+                    #get new jobs assigned to us but to a pool we don't have
+                    #these need to be assigned to a node that can service them
+                    jobs=dict( (jid,job) for (jid,job) in \
+                        self.state.get(state='new',node=self.name).items() \
+                        if job['pool'] not in self.pools.keys() )
+                    #add new jobs without node assigned, these were just submitted and need routing
+                    jobs.update(self.state.get(state='new',node=False))
+                    
+                    #process jobs by oldest to newest submitted
                     for jid,job in sorted(jobs.items(),key=lambda j:j[1]['submit_ts']):
                         try:
-                            #if no submit node, we're the first to handle it so set if we're a node
+                            #if no submit node, it must have been submitted to us
                             if not job.get('submit_node'): self.state.update_job(jid,submit_node=self.name)
                             pool=job['pool']
                             pool_status=self.state.get_pools().get(pool,{})
-                            #we need to select a node:
+                            #we need to select nodes:
                             # with open slots (slots > 0)
                             # or full (slots is < 1) but jobs can wait
                             # or without defined slots (slots is True)
                             nodes=[node for node,free_slots in pool_status.items() if \
-                                free_slots>0 or self.cfg.get('wait_in_pool')]
+                                free_slots > 0 or self.cfg.get('wait_in_pool')]
 
                             #if no nodes or job in hold, we can't route this job yet
                             if not nodes or (job.get('hold') and not self.cfg.get('wait_in_pool')):
-                                if not job['node']: self.state.update_job(jid,node=self.name) #assign to us for now
+                                #assign to us for now
+                                if not job['node']: self.state.update_job(jid,node=self.name) 
                                 continue 
 
                             #select a node for the job
@@ -234,7 +237,6 @@ class Meeseeks:
                             else: node=self.select_by_available(pool_status,nodes)
 
                             #assign the job
-                            slots=pool_status[node]
                             self.logger.info('assign %s to %s@%s'%(jid,pool,node))
                             self.state.update_job(jid,node=node)
                             
