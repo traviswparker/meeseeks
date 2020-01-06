@@ -46,7 +46,7 @@ class RequestListener (socketserver.ThreadingMixIn, socketserver.TCPServer):
             return connstream, fromaddr
         return newsocket, fromaddr
 
-class Box:
+class Meeseeks:
     '''meeseeks box main thread'''
     def __init__(self,**cfg):
         self.cfg=cfg

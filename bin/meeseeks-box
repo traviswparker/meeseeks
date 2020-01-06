@@ -5,15 +5,15 @@ import logging
 import signal
 
 from meeseeks.util import *
-from meeseeks.box import Box
+from meeseeks.service import Meeseeks
 
 def signal_stop(*args):
     logging.debug(args)
-    box.shutdown.set()
+    meeseeks.shutdown.set()
 
 def signal_reload(*args):
     logging.debug(args)
-    box.apply_config(**config())
+    meeseeks.apply_config(**config())
 
 def config():
     cfgargs,args=cmdline_parser(sys.argv[1:])
@@ -21,10 +21,10 @@ def config():
     logging.basicConfig(**cfg.get('logging',{'level':logging.INFO}))
     return cfg
 
-box=Box(**config())
+meeseeks=Meeseeks(**config())
 
 signal.signal(signal.SIGINT,signal_stop)
 signal.signal(signal.SIGTERM,signal_stop)
 signal.signal(signal.SIGHUP,signal_reload)
 
-box.run()
+meeseeks.run()
