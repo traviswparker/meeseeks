@@ -272,14 +272,17 @@ class State(threading.Thread):
                                     #if no node specified, routing logic will set one
                                     if jobargs.get('node'): jobargs['submit_node']=jobargs['node'] #change submit node if set
                                     else: 
-                                        jobargs['node']=job.get('submit_node',False) #reset to submit node if set
-                                        jobargs['active']=False # clear active state if removed from node
-                                        jobargs['error']=None #clear error state
+                                        jobargs.update( 
+                                            node=job.get('submit_node',False), #reset to submit node if set
+                                            active=False, # clear active state if removed from node
+                                            error=None, #clear error state
+                                            start_count=0,fail_count=0, #reset counts
+                                            submit_ts=time.time() #reset submit ts
+                                        )
                                 else: del jobargs['state'] #other state change not allowed
                         #active jobs can only be killed, and cannot be moved
                         else:
-                            if 'state' in jobargs and jobargs['state'] != 'killed':
-                                del jobargs['state']
+                            if 'state' in jobargs and jobargs['state'] != 'killed': del jobargs['state']
                             if 'node' in jobargs: del jobargs['node']
                             if 'pool' in jobargs: del jobargs['pool']
                     else: #this is a new job
@@ -294,7 +297,8 @@ class State(threading.Thread):
                                 'state':'new',
                                 'start_count':0,             
                                 'fail_count':0,
-                                'error':None
+                                'error':None,
+                                'active':False
                             }
                     job.update(**jobargs)
                     self.__update_job(jid,**job)
@@ -316,10 +320,11 @@ class State(threading.Thread):
                             self.write_history(jid)
                     self.__hist_seq=self.__seq
 
-                    #scan for jobs that may not have made it to the node and repush them
+                    #keep pending jobs from expiring
                     for jid,job in self.__jobs.items():
-                        if job['state'] == 'new' and time.time()-job['ts'] > self.timeout:
-                            self.__update_job(jid) #touch the job to resend it downstream
+                        #if job is new/inactive it is not in a pool 
+                        if job['state'] == 'new' and not job.get('active') and time.time()-job['ts'] > self.timeout:
+                            self.__update_job(jid) #touch the job
 
                     #scan for expired jobs
                     for jid,job in self.__jobs.copy().items():
@@ -338,18 +343,24 @@ class State(threading.Thread):
                     #scan for jobs to restart/retry/resubmit
                     for jid,job in self.__jobs.items():
                         #if we restart and this job is done, reset to new
-                        if job.get('restart') and job['state'] == 'done' and self.node and job.get('node')==self.node:
-                            self.logger.info('restart job %s'%(jid))
-                            self.__update_job(jid,state='new')
+                        if job.get('restart') and job['state'] == 'done' \
+                            and self.node and job.get('node')==self.node:
+                                self.logger.info('restart job %s'%(jid))
+                                self.__update_job(jid,state='new')
                         #if we retry on fail, reset the job and keep on this node
-                        elif job.get('retries') and job['state'] == 'failed' and job.get('fail_count') <= job.get('retries',0):
-                            self.logger.info('retry job %s (%s of %s)'%(jid,job.get('fail_count'),job.get('retries')))
-                            self.__update_job(jid,state='new')
+                        elif job.get('retries') and job['state'] == 'failed' \
+                            and job.get('fail_count') <= job.get('retries',0):
+                                self.logger.info('retry job %s (%s of %s)'%(jid,job.get('fail_count'),job.get('retries')))
+                                self.__update_job(jid,state='new')
                         #if we resubmit finished jobs and job was not killed, reset it but only if we are the submit node
-                        elif job.get('resubmit') and not job.get('active') and job['state'] not in ['new','killed'] \
+                        elif job.get('resubmit') and not job.get('active') \
+                            and job['state'] not in ['new','killed'] \
                             and self.node and job.get('submit_node') == self.node:
                                 self.logger.info('resubmit job %s'%(jid))
-                                self.__update_job(jid,fail_count=0,start_count=0,state='new',node=self.node)
+                                self.__update_job(jid,
+                                fail_count=0,start_count=0,
+                                submit_ts=time.time(),
+                                state='new',node=self.node)
 
                     #set nodes that have not sent status to offline
                     for node,node_status in self.__status.copy().items():

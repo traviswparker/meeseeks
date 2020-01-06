@@ -127,7 +127,7 @@ class Pool(threading.Thread):
             try:
                 #get jobs assigned to this node and pool
                 pool_jobs=self.state.get(node=self.node,pool=self.pool)
-                for jid,job in pool_jobs.items():
+                for jid,job in sorted(pool_jobs.items(),key=lambda j:j[1]['submit_ts']):
                     
                     #check running jobs
                     task_info={} #task info if running

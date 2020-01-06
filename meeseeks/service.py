@@ -179,7 +179,8 @@ class Meeseeks:
                 self.listener.server_thread.start()
                 self.logger.info('listening on %s:%s'%self.listener.server_address)
 
-            self.restart.clear()
+            self.restart.clear() #startup finished, clear event
+            
             while not self.shutdown.is_set() and not self.restart.is_set():
                 #update our node status
                 #we can route to nodes we see via our connected nodes
@@ -189,7 +190,7 @@ class Meeseeks:
                     loadavg=self.get_loadavg(),
                     routing=list(self.state.get_nodes().keys()) ) 
 
-                #job routing logic
+                #scheduling logic
                 try:
                     #handle config jobs assigned to us
                     for jid,job in self.state.get(node=self.name,pool='__config').items():
@@ -207,9 +208,10 @@ class Meeseeks:
                         if job['pool'] not in self.pools.keys() )
                     #add jobs without node assigned, these were just submitted and need routing
                     jobs.update(self.state.get(node=False))
+                    #get cluster state
                     node_status=self.state.get_nodes()
-                    #process jobs by least recently updated to most recently updated
-                    for jid,job in sorted(jobs.items(),key=lambda j:j[1]['ts']):
+                    #process jobs by opdest to newest submitted
+                    for jid,job in sorted(jobs.items(),key=lambda j:j[1]['submit_ts']):
                         try:
                             #if no submit node, we're the first to handle it so set if we're a node
                             if not job.get('submit_node'): self.state.update_job(jid,submit_node=self.name)
@@ -219,7 +221,8 @@ class Meeseeks:
                             # with open slots (slots > 0)
                             # or full (slots is < 1) but jobs can wait
                             # or without defined slots (slots is True)
-                            nodes=[node for node,free_slots in pool_status.items() if free_slots>0 or self.cfg.get('wait_in_pool')]
+                            nodes=[node for node,free_slots in pool_status.items() if \
+                                free_slots>0 or self.cfg.get('wait_in_pool')]
 
                             #if no nodes or job in hold, we can't route this job yet
                             if not nodes or (job.get('hold') and not self.cfg.get('wait_in_pool')):
@@ -230,9 +233,9 @@ class Meeseeks:
                             if self.cfg.get('use_loadavg'): node=self.select_by_loadavg(node_status,nodes)
                             else: node=self.select_by_available(pool_status,nodes)
 
-                            #route the job
+                            #assign the job
                             slots=pool_status[node]
-                            self.logger.info('routing %s for %s to %s (%s)'%(jid,pool,node,slots))
+                            self.logger.info('assign %s to %s@%s'%(jid,pool,node))
                             self.state.update_job(jid,node=node)
                             
                         except Exception as e: self.logger.warning(e,exc_info=True)
