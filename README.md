@@ -244,8 +244,9 @@ killed: job was killed, rc may be set if job was running.
     JSON config format, can also be specified on command line as key.subkey..=value|value,value
 
     {
-        "defaults" : { ... defaults for all other sections ... 
-                       "template":<template> will set a default template for all watches},
+        "defaults" : { ... defaults for all other sections ... },
+        
+        "run" : <template(s)> will apply template(s) to all watch configs to generate <template>-<name>,
 
         "client" : { ... configuration for connecting to meeseeks ... },
         
@@ -339,12 +340,12 @@ killed: job was killed, rc may be set if job was running.
     If updated=True, last file mtime is tracked in ._<name>_<n>_<filename>.mtime
     hidden ._ files will be deleted when associated files are deleted, unless cleanup=0
 
-    to apply the same watch template to a list of paths, define only the paths in config:
+    to generate a config by applying multiple templates to a list of paths, define only the paths in config:
     "watch": {
         "name1":{ "path":"path1" },
         "name2":{ "path":"path2" },
         ...
     }
-    and apply template globally with:
-        meeseeks-watch defaults.template=<template> templates.cfg paths.cfg
-    if default template is set, watch names will be prefixed to <template>-<name>
+    and apply templates globally with:
+        meeseeks-watch run=<template>,<template>,<template> templates.cfg paths.cfg
+    generatedf watch names will be <template>-<name>

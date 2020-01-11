@@ -6,7 +6,7 @@ do
 done
 
 test() {
-    meeseeks-watch defaults.template=$1 \
+    meeseeks-watch run=$1 \
         watch.01.path=`pwd`/01 \
         watch.02.path=`pwd`/02 \
         watch.03.path=`pwd`/03 \
@@ -19,8 +19,5 @@ test() {
     watch.cfg 
 }
 
-test job &
-test file &
-test fileset &
-test fileupdate &
-meeseeks-watch defaults.template=multi watch.01= watch.cfg
+test job,file,fileset,fileupdate &
+meeseeks-watch run=multi watch.01= watch.cfg

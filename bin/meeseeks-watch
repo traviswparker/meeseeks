@@ -28,8 +28,8 @@ meeseeks-watch [key=value]... [config-file]
 JSON config format, can also be specified on command line as key.subkey..=value|value,value
 {
     "name" : <string> name for logging
-    "defaults" : { defaults for all other sections,
-                   "template":<template> will set a default name and template for all },
+    "defaults" : { defaults for all other sections },
+    "run" : <template(s)> will apply template(s) to all watch configs to generate <template>-<name>,
     "client" : { configuration for connecting to meeseeks },
     "template" : {
         "<name>": { defines a watch template, see watch spec }
@@ -71,12 +71,16 @@ def apply_config(**cfg):
         CLIENT.wait() #wait for the client to sync initial state
 
     #configure watch threads
-    watch=cfg.get('watch',{})
     #prefix names and apply default template if set
-    if 'template' in defaults: 
-        logger.info('set default template to %s'%defaults['template'])
-        watch=dict( (defaults['template']+'-'+w,{'template':defaults['template'],**d}) 
-                for (w,d) in watch.items())
+    if 'run' in cfg:
+        run=cfg.get('run')
+        watch={}
+        if type(run) is not list: run=[run]
+        for t in run:
+            src=cfg.get('watch',{}).copy()
+            logger.info('applying template %s'%t)
+            watch.update( dict( (t+'-'+w,{'template':t,**d}) for (w,d) in src.items()) )
+    else: watch=cfg.get('watch',{})
 
     for w in WATCH.copy(): #stop removed watches
         if w not in watch: stop_watch(w)
@@ -85,7 +89,7 @@ def apply_config(**cfg):
         #apply template if set in watch config, 
         #if template[None] exists it will auto-apply if no other template set
         wcfg={  **defaults,
-                **cfg.get('template',{}).get(watch[w].get('template'),{}),
+                **cfg.get('template',{}).get(watch[w].get('template',defaults.get('template')),{}),
                 **watch[w]
             } 
         if w not in WATCH: #add new
