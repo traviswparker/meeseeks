@@ -259,6 +259,8 @@ killed: job was killed, rc may be set if job was running.
             "<name>": { 
                 "template": <name> applies template <name> to this watch config. 
                     Keys defined in watch override keys in template
+                "plugin": optional <path.module.Class> to provide this watch instance.
+                           meeseeks.watch.WatchXattr is included for tracking state with filesystem xattrs 
                 "path" : <path to watch>
                 "glob" : <pattern> | [ <pattern>, ... ]
                     Watches the files matching the pattern. 

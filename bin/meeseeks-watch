@@ -93,8 +93,12 @@ def apply_config(**cfg):
                 **watch[w]
             } 
         if w not in WATCH: #add new
-            logger.info('adding watch %s'%w)
-            WATCH[w]=Watch(w,client=CLIENT,**wcfg)
+            if 'plugin' in wcfg:
+                w_class=import_plugin(wcfg['plugin'])
+                del wcfg['plugin']
+            else: w_class=Watch
+            logger.info('starting %s %s'%(w_class,w))
+            WATCH[w]=w_class(w,client=CLIENT,**wcfg)
         else: WATCH[w].config(**wcfg) #reconfigure existing
 
 def stop_watch(w):

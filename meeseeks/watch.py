@@ -227,3 +227,34 @@ class Watch(threading.Thread):
         for jid,job in self.__jobs.items(): 
             self.logger.info('killing job %s'%jid)
             job.kill()
+
+try:
+    import xattr
+
+    class WatchXattr(Watch):
+        '''replace the set/check file status methods to use filesystem extended attributes'''
+        
+        def set_file_status(self,index,filename,job):
+            '''set the file processing status and last modified time attrs'''
+            self.logger.debug('set %s %s %s'%(index,filename,job))
+            attr='user.%s_%s'%(self.name,index)
+            f=os.path.join(self.path,filename)
+            xattr.setxattr(f,attr+'.'+job['state'],json.dumps(job).encode())
+            if self.cfg.get('updated'): #save mtime
+                xattr.setxattr(f,attr+'.mtime',str(os.stat(os.path.join(self.path,filename)).st_mtime).encode())
+
+        def check_file_status(self,index,file,status='done'):
+            '''check the file attrs
+            should return True if the status=status, False if not'''
+            attr='user.%s_%s'%(self.name,index)
+            try:
+                v=xattr.getxattr(file.path,attr+'.'+status)
+                if not self.cfg.get('updated'): return True #is done
+                try:
+                    mtime=float(xattr.getxattr(file.path,attr+'.mtime'))
+                    if mtime != file.stat().st_mtime: return False
+                except: pass #no mtime attr, consider done
+                return True
+            except: return False #attr not set
+
+except: pass #no xattr support available
