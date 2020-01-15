@@ -30,6 +30,7 @@ class Node(threading.Thread):
 
     def config(self,address=None,port=13700,timeout=10,refresh=1,poll=10,**cfg):
         if address: self.address=address
+        elif self.remote_node: self.address=self.remote_node
         else: self.address=self.node
         if port: self.port=int(port)
         if timeout: self.timeout=int(timeout)
