@@ -104,8 +104,8 @@ def show(client,args,**kwargs):
         for n,node in sorted(s.items()):
             if 'n' in args:
                 l='\t'*i + n+'\t'
-                if node.get('online'): l+='online'
-                else: l+='offline'
+                if node.get('online'): l+='up'
+                else: l+='down'
                 l+='\t%s'%node.get('loadavg')
                 if n: print(l)
             pn=set(node.get('free',{}).keys())|set(node.get('jobs',{}).keys())
