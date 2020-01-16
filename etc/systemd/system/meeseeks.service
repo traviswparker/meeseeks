@@ -1,0 +1,9 @@
+[Unit]
+Description=Meeseeks
+
+[Service]
+Type=simple
+ExecStart=/bin/su -c 'meeseeks-box $HOME/etc/global.cfg $HOME/etc/$HOSTNAME.cfg' - meeseeks
+
+[Install]
+WantedBy=multi-user.target
