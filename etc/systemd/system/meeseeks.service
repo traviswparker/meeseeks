@@ -3,7 +3,9 @@ Description=Meeseeks
 
 [Service]
 Type=simple
-ExecStart=/bin/su -c 'meeseeks-box $HOME/etc/global.cfg $HOME/etc/$HOSTNAME.cfg' - meeseeks
+ExecStart=/bin/sudo -i -u meeseeks meeseeks-box etc/global.cfg etc/$HOSTNAME.cfg
+ExecReload=/bin/pkill -HUP -f meeseeks-box
+ExecStop=/bin/pkill -f meeseeks-box
 
 [Install]
 WantedBy=multi-user.target
