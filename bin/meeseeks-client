@@ -59,7 +59,7 @@ def usage():
 
     client-options can be set by the environment var MEESEEKS_CONF and default to: 
         address= (default localhost)
-        port= (defult 13700)
+        port= (defult 49463)
         refresh= (interval to continuously refresh status until no jobs left)
 
 """)

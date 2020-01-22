@@ -28,7 +28,7 @@ class Node(threading.Thread):
         self.config(**cfg)
         if self.refresh: self.start() #if refresh=0, do not start thread
 
-    def config(self,address=None,port=13700,timeout=10,refresh=1,poll=10,**cfg):
+    def config(self,address=None,port=int('c137',16),timeout=10,refresh=1,poll=10,**cfg):
         if address: self.address=address
         elif self.remote_node: self.address=self.remote_node
         else: self.address=self.node

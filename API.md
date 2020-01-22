@@ -44,10 +44,10 @@ the Client object provides a request-oriented API
 
     from meeseeks import Client
 
-    client=Client(address=None,port=13700,timeout=10,refresh=0,poll=10,expire=60,set_global=False,**cfg)
+    client=Client(address=None,port=49463,timeout=10,refresh=0,poll=10,expire=60,set_global=False,**cfg)
 
         address:    the hostname/address of the node to connect to (None=localhost)
-        port:       TCP port to connect to (13700)
+        port:       TCP port to connect to (49463)
         timeout:    connect timeout (10 seconds)
         refresh:    interval to sync jobs (0=disabled. Set to >0 to start background thread for cached usage)
         poll:       interval to poll status (10 seconds, must be > refresh)
@@ -125,7 +125,7 @@ the Job object provides a job-oriented API
         client: the Client object this Job should use.
                 If None, the global Client will be used, and initialized if necessary
                 The global Client is configured by the environment var MEESEEKS_CONF
-                defaults to localhost:13700 with a refresh of 10 seconds
+                defaults to localhost:49463 with a refresh of 10 seconds
 
         notify: if notify is set to a callback function, a background thread will be started to track the job
                 The  callback will be called with the job object as an argument when job finishes

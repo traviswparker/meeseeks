@@ -43,7 +43,7 @@ The config sections, objects, and defaults are as follows:
 
     listen: { #configures the listening socket
         address: defaults to localhost
-        port: defaults to 13700
+        port: defaults to 49463
         ssl: {SSLContext config}
     }
 
@@ -60,7 +60,7 @@ The config sections, objects, and defaults are as follows:
     nodes: list of downstream nodes to connect to
         { <nodename>:{
             address: defaults to <nodename>
-            port: defaults to 13700
+            port: defaults to 49463
             ssl: {SSLContext config}
             refresh: 1 # how often in seconds we sync state
             poll: 10 # how often in seconds we request status
@@ -95,7 +95,7 @@ example:
 
  connect with something like
      
-     nc localhost 13700
+     nc localhost 49463
  
  and send JSON.
  newline sends requests for processing.
@@ -232,7 +232,7 @@ killed: job was killed, rc may be set if job was running.
 
     client-options can be set by the environment var MEESEEKS_CONF and default to: 
         address= (default localhost)
-        port= (defult 13700)
+        port= (defult 49463)
         refresh= (interval to continuously refresh status until no jobs left)
 
 # meeseeks-watch

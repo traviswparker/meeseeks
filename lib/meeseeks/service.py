@@ -162,7 +162,7 @@ class Meeseeks:
             if not self.listener:
                 lcfg=self.defaults.copy()
                 lcfg.update(self.cfg.get('listen',{})) #merge in listener specifc options
-                port,address,prefix=lcfg.get('port',13700),lcfg.get('address'),lcfg.get('prefix')
+                port,address,prefix=lcfg.get('port',int('c137',16)),lcfg.get('address'),lcfg.get('prefix')
                 #if we are given a prefix instead of an address
                 #find the address that matches the prefix and listen on it
                 if not address:
