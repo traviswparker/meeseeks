@@ -4,7 +4,6 @@ Description=Meeseeks
 [Service]
 Type=simple
 ExecStart=/home/meeseeks/bin/meeseeks-service.sh
-PIDFile=meeseeks.pid
 ExecReload=/bin/kill -HUP $MAINPID
 ExecStop=/bin/kill $MAINPID
 
