@@ -3,6 +3,7 @@
 import threading
 import subprocess
 import base64
+from meeseeks.util import *
 
 '''PLUGIN API
     Plugins should implement an alternate Task class
@@ -34,6 +35,7 @@ class Task(threading.Thread):
         self.info={} #info to update job
         self.stdin=self.stdout=self.stderr=None #file handles if redirecting
         self.stdout_data=self.stderr_data=None #output if capturing
+        self.uid,self.gid=job.get('uid'),job.get('gid')
 
         # stdin from file
         stdin=job.get('stdin')
@@ -58,7 +60,9 @@ class Task(threading.Thread):
             popen_args.update(stderr=subprocess.PIPE)
             
         # start subprocess. If this raises we don't start a thread
-        self.__sub=subprocess.Popen(job.get('args'), **popen_args)
+        self.__sub=subprocess.Popen( job.get('args'), 
+                    preexec_fn=su(self.uid,self.gid,sub=True),
+                    **popen_args)
         self.info['pid']=self.__sub.pid #set pid in job
         #thread will wait on subprocess
         threading.Thread.__init__(self,name=self.__sub.pid,target=self.__task_run)
@@ -81,7 +85,15 @@ class Task(threading.Thread):
         if stdout: self.info['stdout_data']=base64.b64encode(stdout).decode()
         if stderr: self.info['stderr_data']=base64.b64encode(stderr).decode()
 
-    def kill(self): self.__sub.kill()
+    def kill(self,sig=9): 
+        #kill the subprocess
+        #we spawn another subprocess to do this
+        #(we might need to switch back to root and then to the job user, 
+        # and we don't want to change the euid/egid of the parent)
+        subprocess.Popen( ['kill','-%s'%sig,'%s'%self.__sub.pid], 
+            stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+            preexec_fn=su(self.uid,self.gid,sub=True) ).communicate()
+
     def poll(self): 
         #return None until the thread exits so we can reliably capture output
         if self.is_alive(): return None

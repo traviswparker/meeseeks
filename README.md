@@ -31,7 +31,10 @@ generally you don't change the port number, and run one meeseeks-box per host
 The config sections, objects, and defaults are as follows:
 {
 
-    name: #sets the name of the node, defaults to the hostname if not set
+    name: #set the name of the node, defaults to the hostname if not set
+    user: #set the effective username/id of the node. Only effective if root.
+    group: #set the effective group of the node. Only effective if root.
+           #Defaults to user's primary group. 
     
     logging: {
         #logging config, use python logging.basicConfig parameters such as level=10 for DEBUG
@@ -105,6 +108,9 @@ example:
       "submit" :{ 
         "id": string  #job id, optional, MUST be unique. A UUID will be generated if id is omitted
                         #if an existing job id is given, the job will be modified if possible
+        "uid": [optional] username/id of the job. If not specified the job will run as the node's user.
+        "gid": [optional] groupname/id of the job. 
+        (If uid/gid differ from the node and the node was not started as root the job will fail.)
         "pool": string #pool name, REQUIRED.
         "args": [executable, arg, arg, arg] #The command to run and arguments. If subprocess.Popen likes it, it will work.
         "node": string #optional. Node selection, can be * for all in pool or end with * for wildcard
@@ -350,4 +356,13 @@ killed: job was killed, rc may be set if job was running.
     }
     and apply templates globally with:
         meeseeks-watch run=<template>,<template>,<template> templates.cfg paths.cfg
-    generatedf watch names will be <template>-<name>
+    generated watch names will be <template>-<name>
+
+
+# security warning!
+
+Meeseeks is not designed to provide any kind of real security.
+
+Job uid/gid of 0 will be ignored (unless the node is effectively running as root, so don't do that! Always set user/group in the config) and meeseeks-client always set sets the job uid to the running user. However, any user can run jobs as any nonzero uid, or kill any job regardless of uid. Enforcing uid checks are pointless when anyone can connect to the listener port. 
+
+If you will be running a multi-user cluster, you should place the service, commands, and trusted users in a 'meeseeks' group and restrict access to the port with SSL and certificates that only the meeseeks group can access.

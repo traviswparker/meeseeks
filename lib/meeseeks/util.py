@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import sys
+import os
+import pwd, grp
 import json
 import ssl
 import importlib
@@ -77,3 +79,28 @@ def create_ssl_context(cfg):
         keyfile=cfg.get('key'),
         password=cfg.get('pass') )
     return ssl_context
+
+def su(uid=None,gid=None,sub=False):
+    #set effective or subprocess user/group if valid and not root,
+    #if gid not provided, will use effective user's group
+    #if uid is a string, get the uid
+    #if sub=True, return a preexeec function that will set the uid/gid
+    if type(uid) is str: uid=pwd.getpwnam(uid).pw_uid
+    #if uid valid
+    if uid and uid>0: 
+        if type(gid) is str: gid=grp.getgrnam(gid).gr_gid
+        #if no valid group specified, use user's group
+        if gid and gid>0: pass
+        else: gid=pwd.getpwuid(uid).pw_gid
+        #reset effective uid (likely back to root) so we can change it again
+        if sub:
+            def preexec_fn():
+                os.seteuid(os.getuid())
+                os.setgid(gid)
+                os.setuid(uid)
+            return preexec_fn
+        else:
+            os.seteuid(os.getuid())
+            os.setegid(gid)
+            os.seteuid(uid)
+            return os.getresuid(),os.getresgid()

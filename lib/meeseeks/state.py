@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import time
 import threading
 import logging
@@ -10,6 +11,8 @@ class State(threading.Thread):
     '''cluster state interface
         job submit spec is:
             id: [optional] manually set id of the job, a UUID will be generated if not specified
+            uid: [optional] userid of the job
+            gid: [optional] groupid of the job
             pool: <required> the pool the job runs in
             args: <required> list of [ arg0 (executable) [,arg1,arg2,...] ] (command line for job)
             node: [optional] node to run on, job will fail if unavailable
@@ -47,6 +50,8 @@ class State(threading.Thread):
     #only allow these keys to prevent shenanigans
     JOB_SPEC=[  
                 'id',
+                'uid',
+                'gid',
                 'pool',
                 'args',
                 'state',
@@ -298,7 +303,8 @@ class State(threading.Thread):
                                 'start_count':0,             
                                 'fail_count':0,
                                 'error':None,
-                                'active':False
+                                'active':False,
+                                'uid':os.geteuid()
                             }
                     job.update(**jobargs)
                     self.__update_job(jid,**job)
