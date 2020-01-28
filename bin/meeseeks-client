@@ -112,8 +112,7 @@ def show(client,args,**kwargs):
             for p in sorted(pn):
                 if 'n' in args: l='\t'*i + '\t'
                 else: l=''
-                pn='%s@%s'%(p,n)
-                l+='pool %s'%pn
+                l+='%s@%s'%(p,n)
                 jobs=node.get('jobs',{}).get(p,{})
                 jc=len(jobs)
                 l+='\t%s jobs'%jc
