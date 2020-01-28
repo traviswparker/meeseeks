@@ -224,9 +224,11 @@ class Watch(threading.Thread):
         #something really bad happened, log it and shut down gracefully
         except Exception as e: self.logger.error(e,exc_info=True)
         
+        #kill all jobs and verify stop before exiting, to ensure client isn't disposed of before sync
         for jid,job in self.__jobs.items(): 
             self.logger.info('killing job %s'%jid)
             job.kill()
+            while job.is_alive(): time.sleep(1)
 
 try:
     import xattr
