@@ -366,7 +366,7 @@ class State(threading.Thread):
                     for node,node_status in self.__status.copy().items():
                         if time.time()-node_status.get('ts',0) > self.timeout:
                             if node_status.get('online'):
-                                self.logger.warning('node %s not updated in %s seconds'%(node,self.expire))
+                                self.logger.warning('node %s not updated in %s seconds'%(node,self.timeout))
                                 self.__update_node(node,online=False)
                             elif node_status.get('remove'): #offline node is marked for upstream removal
                                 self.logger.info('removing node %s' %node)
