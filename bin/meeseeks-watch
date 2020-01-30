@@ -105,7 +105,6 @@ def stop_watch(w):
     global WATCH
     wt=WATCH[w]
     wt.shutdown.set()
-    logger.info('stopping %s'%wt.name)
     wt.join()
     del WATCH[w]
 

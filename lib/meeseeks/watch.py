@@ -39,10 +39,8 @@ class Watch(threading.Thread):
         with open(os.path.join(self.path,'._%s_%s_%s.%s'%(self.name,index,filename,job['state'])),'w') as fp: 
             json.dump(job,fp,sort_keys=True,indent=4)
         if self.cfg.get('updated'): #save mtime
-            try:
-                with open(os.path.join(self.path,'._%s_%s_%s.%s'%(self.name,index,filename,'mtime')),'w') as fp:
-                    fp.writelines((str(os.stat(os.path.join(self.path,filename)).st_mtime)))
-            except: pass
+            with open(os.path.join(self.path,'._%s_%s_%s.%s'%(self.name,index,filename,'mtime')),'w') as fp:
+                fp.writelines((str(os.stat(os.path.join(self.path,filename)).st_mtime)))
 
     def check_file_status(self,index,file,status='done'):
         '''check the file status
@@ -144,7 +142,9 @@ class Watch(threading.Thread):
                         if not job.is_alive():
                             if '_' in jid: #set file status if this job is for a file
                                 index,filename=jid.split('_',2)
-                                self.set_file_status(index,filename,job.poll())
+                                try: self.set_file_status(index,filename,job.poll())
+                                #file was probably deleted, just log it
+                                except Exception as e: self.logger.warning('%s %s'%(filename,e))
                             del self.__jobs[jid]
 
                 if globs: #if we are tracking files
@@ -155,7 +155,7 @@ class Watch(threading.Thread):
                         try: 
                             n=self.rescan_path()
                             self.logger.debug('%s: %s files'%(self.path,n))
-                        except Exception as e: self.logger.error(e,exc_info=True)
+                        except Exception as e: self.logger.warning(e)
 
                         #build lists
                         for glob in globs:
@@ -224,6 +224,8 @@ class Watch(threading.Thread):
         #something really bad happened, log it and shut down gracefully
         except Exception as e: self.logger.error(e,exc_info=True)
         
+        self.logger.info('stopping')
+
         #kill all jobs and verify stop before exiting, to ensure client isn't disposed of before sync
         for jid,job in self.__jobs.items(): 
             self.logger.info('killing job %s'%jid)
