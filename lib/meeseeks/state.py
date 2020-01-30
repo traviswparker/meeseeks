@@ -320,6 +320,9 @@ class State(threading.Thread):
         while not self.shutdown.is_set():
             with self.__lock:
                 try:
+                    #snapshot node status so we can modify it
+                    nodes=self.__status.copy()
+
                     #write recently finished jobs to history
                     for jid,job in self.__jobs.items():
                         if job['seq'] > self.__hist_seq and job['state'] in self.JOB_INACTIVE:
@@ -333,13 +336,13 @@ class State(threading.Thread):
                             if job['state'] in self.JOB_INACTIVE:
                                 self.logger.debug('expiring inactive job %s'%jid)
                                 del self.__jobs[jid]
-                            #if we expire active jobs
-                            elif self.expire_active_jobs and job.get('active'): 
-                                #this job *should* have been updated by the node that set it active
-                                self.logger.warning('active job %s not updated in %s seconds'%(jid,self.expire))
+                            #if we expire active jobs and the node assigned to this job is down
+                            elif self.expire_active_jobs and not nodes.get(job.get('node'),{}).get('online'):
+                                #this job *should* have been updated by the node
+                                self.logger.warning('job %s@%s not updated in %s seconds'%(jid,job.get('node'),self.expire))
                                 #set job to failed
-                                self.__update_job(jid,state='failed',error='expired',fail_count=job.get('fail_count',0)+1)
-
+                                self.__update_job(jid,state='failed',error='node',fail_count=job.get('fail_count',0)+1)
+                            
                     #scan for jobs to restart/retry/resubmit
                     for jid,job in self.__jobs.items():
                         #if we restart and this job is done, reset to new
@@ -363,7 +366,7 @@ class State(threading.Thread):
                                 state='new',node=self.node)
 
                     #set nodes that have not sent status to offline
-                    for node,node_status in self.__status.copy().items():
+                    for node,node_status in nodes.items():
                         if time.time()-node_status.get('ts',0) > self.timeout:
                             if node_status.get('online'):
                                 self.logger.warning('node %s not updated in %s seconds'%(node,self.timeout))
@@ -373,8 +376,7 @@ class State(threading.Thread):
                                 del self.__status[node]
                             #when a node goes down or is removed, any jobs for that node will be failed
                             for jid,job in self.__jobs.items():
-                                if job.get('node') == node and job.get('state') == 'new':
-                                    self.__update_job(jid,state='failed',error='node',fail_count=job.get('fail_count',0)+1)
+
 
                 except Exception as e: self.logger.warning(e,exc_info=True)
 
