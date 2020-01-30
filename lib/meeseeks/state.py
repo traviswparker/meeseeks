@@ -339,7 +339,7 @@ class State(threading.Thread):
                             #if we expire active jobs and the node assigned to this job is down
                             elif self.expire_active_jobs and not nodes.get(job.get('node'),{}).get('online'):
                                 #this job *should* have been updated by the node
-                                self.logger.warning('job %s@%s not updated in %s seconds'%(jid,job.get('node'),self.expire))
+                                self.logger.warning('expiring active job %s on %s'%(jid,job.get('node')))
                                 #set job to failed
                                 self.__update_job(jid,state='failed',error='node',fail_count=job.get('fail_count',0)+1)
                             
