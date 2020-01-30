@@ -374,9 +374,6 @@ class State(threading.Thread):
                             elif node_status.get('remove'): #offline node is marked for upstream removal
                                 self.logger.info('removing node %s' %node)
                                 del self.__status[node]
-                            #when a node goes down or is removed, any jobs for that node will be failed
-                            for jid,job in self.__jobs.items():
-
 
                 except Exception as e: self.logger.warning(e,exc_info=True)
 
