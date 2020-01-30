@@ -39,8 +39,9 @@ class Pool(threading.Thread):
         self.config(**cfg)
         self.start()
 
-    def config(self,update=30,slots=0,runtime=None,drain=False,hold=False,**cfg):
-        self.update=int(update) #how often we update the state of running jobs
+    def config(self,slots=0,update=None,runtime=None,drain=False,hold=False,**cfg):
+        if update: self.update=int(update) #how often we update the state of running jobs
+        else: self.update=None
         if runtime: self.max_runtime=int(runtime)
         else: self.max_runtime=None
         if slots==0: self.slots=True
@@ -135,10 +136,10 @@ class Pool(threading.Thread):
                     elif (job['state'] == 'running'): #job is supposed be running but isn't?
                         self.logger.warning('job %s in state running but no task'%jid)
                         job=self.update_job( jid, state='failed', error='task' )
-                    #periodically update active jobs so they don't expire
+                    #kill or update active jobs
                     if job.get('active'):
                         if job['state'] == 'killed': job=self.kill_job(jid,job) #kill job if requested
-                        elif (time.time()-job['ts'] > self.update): #if update interval expired
+                        elif self.update and (time.time()-job['ts'] > self.update): #if update interval
                             self.update_job(jid,state=job['state'],**task_info) #update with task info
                     
                     #can we activate a job?
