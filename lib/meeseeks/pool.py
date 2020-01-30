@@ -134,7 +134,7 @@ class Pool(threading.Thread):
                     if jid in self.__tasks: task_info=self.check_job(jid,job)
                     elif (job['state'] == 'running'): #job is supposed be running but isn't?
                         self.logger.warning('job %s in state running but no task'%jid)
-                        job=self.update_job( jid, state='failed', error='crashed' )
+                        job=self.update_job( jid, state='failed', error='task' )
                     #periodically update active jobs so they don't expire
                     if job.get('active'):
                         if job['state'] == 'killed': job=self.kill_job(jid,job) #kill job if requested
@@ -168,7 +168,7 @@ class Pool(threading.Thread):
         for jid in list(self.__tasks.keys()):
             job=pool_jobs[jid]
             self.kill_job(jid,job)
-            self.update_job( jid, state='failed', error='shutdown')
+            self.update_job( jid, state='failed', error='pool')
 
         #at shutdown remove self from pool status
         self.state.update_pool(self.pool,self.node,False)
