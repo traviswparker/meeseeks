@@ -130,7 +130,7 @@ def show(client,args,**kwargs):
                         rc=''
                         if job.get('active'): 
                             flags+='A '
-                            if 'start_ts' in job: rc='+'+str(int(job['ts']-job['start_ts']))
+                            if 'start_ts' in job: rc='+'+str(int(time.time()-job['start_ts']))
                         elif job.get('rc'): rc='(%s)'%job['rc']
                         if job.get('error'): flags+='E '
                         if job.get('hold'): flags+='H '
