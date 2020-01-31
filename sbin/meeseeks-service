@@ -1,4 +1,8 @@
 #!/bin/bash
 
-source /etc/profile.d/meeseeks.sh
+export MEESEEKS_HOME=`pwd`/..
+
+export PATH=$PATH:$MEESEEKS_HOME/bin
+export PYTHONPATH=$MEESEEKS_HOME/lib
+
 exec meeseeks-box $MEESEEKS_HOME/etc/global.cfg $MEESEEKS_HOME/etc/$HOSTNAME.cfg
