@@ -1,6 +1,6 @@
 #!/bin/bash
 
-export MEESEEKS_HOME=`pwd`/..
+export MEESEEKS_HOME=`dirname $0`/..
 
 export PATH=$PATH:$MEESEEKS_HOME/bin
 export PYTHONPATH=$MEESEEKS_HOME/lib
