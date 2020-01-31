@@ -3,7 +3,7 @@ Description=Meeseeks
 
 [Service]
 Type=simple
-ExecStart=/home/meeseeks/bin/meeseeks-service.sh
+ExecStart=/home/meeseeks/sbin/meeseeks-service
 ExecReload=/bin/kill -HUP $MAINPID
 ExecStop=/bin/kill $MAINPID
 

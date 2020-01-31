@@ -53,7 +53,7 @@ The config sections, objects, and defaults are as follows:
     state: { #configures the state manager
         expire: 300  # how long in seconds a job will persist without being updated
                      # the state of completed/failed/killed jobs will be available for this long
-        expire_active_jobs: true #if set false, active jobs will not be expired
+        expire_active_jobs: true #if true, jobs in pools will be expired if node is down
         timeout: 60  #timeout in seconds to receive updated node status before it is marked offline
         file: <filename> #if set, save/reload state from this file)
         checkpoint: <int> #if set, save state to file every <int> seconds)
@@ -78,7 +78,9 @@ The config sections, objects, and defaults are as follows:
             hold: false # if true, jobs will not start until hold=false
             drain: false # if true, no new jobs will be assigned to this pool
             runtime: null # if set, limit of how long a job can run for
-            update: 60 # how often in seconds the state of running jobs is updated
+            update: 0 # how often in seconds the state of running jobs is updated
+                      #this is only required if you want task info updates
+                      #jobs in pools will not expire while node is up
             plugin: optional <path.module.Class> to provide this pool instance
         } , ... }
 

@@ -336,12 +336,14 @@ class State(threading.Thread):
                             if job['state'] in self.JOB_INACTIVE:
                                 self.logger.debug('expiring inactive job %s'%jid)
                                 del self.__jobs[jid]
-                            #if we expire active jobs and the node assigned to this job is down
+                            #if we expire active jobs and the job's node is down
                             elif self.expire_active_jobs and not nodes.get(job.get('node'),{}).get('online'):
                                 #this job *should* have been updated by the node
                                 self.logger.warning('expiring active job %s on %s'%(jid,job.get('node')))
                                 #set job to failed
-                                self.__update_job(jid,state='failed',error='node',fail_count=job.get('fail_count',0)+1)
+                                self.__update_job(jid,state='failed',error='expired',fail_count=job.get('fail_count',0)+1)
+                            #bump the timestamp on the job to ensure it has been forwarded to the proper node
+                            else: self.__update_job(jid)
                             
                     #scan for jobs to restart/retry/resubmit
                     for jid,job in self.__jobs.items():
