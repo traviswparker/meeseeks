@@ -120,6 +120,7 @@ class Watch(threading.Thread):
         self.__files={}
         
         rescan_count=-1
+        job_count=0
         try:
             while not self.shutdown.is_set():
 
@@ -129,8 +130,11 @@ class Watch(threading.Thread):
                 if globs and type(globs) is not list: globs=[globs]
                 split=self.cfg.get('split')
                 max_index=self.cfg.get('max_index')
+                max_count=int(self.cfg.get('count',0))
+
 
                 #clean up jobs first
+                done=None #True if jobs done and False if a failure
                 for jid,job in self.__jobs.copy().items():
                     if job.poll(): #a job exited
                         if job.multi: #this is a multi-node job, we don't have a single state
@@ -138,7 +142,10 @@ class Watch(threading.Thread):
                             if any(j.get('state')=='failed' for j in job.poll().values()): 
                                 self.logger.warning('job %s failed'%jid)
                                 job.kill() #stop the remaining parts so it can be restarted
-                        elif job.state != 'done': self.logger.warning('job %s %s'%(jid,job.state))
+                                done=False
+                        elif job.state != 'done': 
+                            self.logger.warning('job %s %s'%(jid,job.state))
+                            done=False
                         if not job.is_alive():
                             if '_' in jid: #set file status if this job is for a file
                                 index,filename=jid.split('_',2)
@@ -146,7 +153,13 @@ class Watch(threading.Thread):
                                 #file was probably deleted, just log it
                                 except Exception as e: self.logger.warning('%s %s'%(filename,e))
                             del self.__jobs[jid]
-
+                            #if no failure and all jobs have exited
+                            if not self.__jobs and done is None: done=True 
+                #if we have a max_count set and jobs have run at least max_count times
+                if done:
+                    job_count+=1 
+                    if max_count and job_count>=max_count: break
+                
                 if globs: #if we are tracking files
                     rescan_count=(rescan_count+1) % self.rescan
 

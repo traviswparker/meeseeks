@@ -165,8 +165,16 @@ while not SHUTDOWN.is_set():
         while not SHUTDOWN.is_set():
             c+=1
             time.sleep(1)
+            #exit if all watch threads have exited
+            if not any(wt.is_alive() for wt in WATCH.values()): 
+                SHUTDOWN.set()
+                break
             if c > CFG['cleanup']: break
-    else: time.sleep(1)
+    else: 
+        time.sleep(1)
+        if not any(wt.is_alive() for wt in WATCH.values()): SHUTDOWN.set()
+    
+    
 
 #shut down all watches
 for w in list(WATCH.keys()): stop_watch(w)

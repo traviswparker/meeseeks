@@ -299,7 +299,7 @@ killed: job was killed, rc may be set if job was running.
                 "max_index": <int> if set, maximum index down the list we will submit jobs for.
                 "refresh" : <int> interval in seconds running jobs are checked and file status updated, default 10
                 "rescan"  : <int> interval in seconds files in path are rescanned, default 60
-
+                "count"   : <int> if set, exit after jobs have run count times.
                 "jobs" : [
                     { jobspec } | [ {jobspec}, ... ] ,
                         jobspec(s) to submit on first (usually newest) file/fileset in the list(s)
