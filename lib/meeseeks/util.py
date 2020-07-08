@@ -17,8 +17,9 @@ def import_plugin(plugin):
         return None
     return getattr (m,plugin.split('.')[-1])
 
-def merge(a, b):
+def merge(a, b, merge_lists=False):
     '''merges b into a if possible, replacing non-dict values
+        if merge_lists, list value in b will be appended to list in a
         !key in b will delete key from a'''
     a=a.copy() #operate on copy of dest dict so we can delete keys
     for key in sorted(b): #process !keys before others
@@ -29,8 +30,11 @@ def merge(a, b):
             #recurse into nested
             if isinstance(a[key], dict) and isinstance(b[key], dict):
                 a[key]=merge(a[key], b[key])
+            #merge lists
+            elif merge_lists and isinstance(a[key], list) and isinstance(b[key], list):
+                a[key].extend(b[key])
             #replace values
-            else: a[key]=b[key]
+            else: a[key] = b[key]
         #else add key
         else: a[key] = b[key]
     return a #return merged dict
