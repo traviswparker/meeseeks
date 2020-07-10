@@ -144,7 +144,7 @@ def show(client,args,**kwargs):
     _print(nodes,0)
 
 #parse env vars
-cfg=cmdline_parser(os.getenv('MEESEEKS_CONF','').split())[0]
+cfg=Config(cmdline_parser(os.getenv('MEESEEKS_CONF','').split())[0])
 try:
     # cmd=first non cfg argument
     # args=remaining arguments 
@@ -159,11 +159,11 @@ try:
     if not cmd:
         c,args=cmdline_parser(args)
         if not args: sys.exit(usage())
-        cfg=merge(cfg,c)
+        cfg.update(c)
         cmd,args=args[0],args[1:] #end of options
     
     #load cfg files
-    if 'file' in cfg: cfg=merge(cfg,read_cfg_files(cfg['file']))
+    if 'file' in cfg: cfg.update(read_cfg_files(cfg['file']))
     
     #parse post-cmd args
     kwargs,args=cmdline_parser(args)

@@ -49,7 +49,7 @@ class RequestListener (socketserver.ThreadingMixIn, socketserver.TCPServer):
 class Meeseeks:
     '''meeseeks box main thread'''
     def __init__(self,**cfg):
-        self.cfg=cfg
+        self.cfg=Config(cfg)
         self.state=self.listener=None
         self.pools={}
         self.nodes={}
@@ -62,7 +62,7 @@ class Meeseeks:
 
     def apply_config(self,**cfg):
         self.logger.info('reloading config')
-        self.cfg=merge(self.cfg,cfg)
+        self.cfg.update(cfg)
         #load config defaults
         self.defaults=self.cfg.get('defaults',{})
 
@@ -197,10 +197,10 @@ class Meeseeks:
                         if job['state'] == 'new':
                             self.logger.info('got config %s: %s'%(jid,job['args']))
                             if job['args']: #if changes were pushed
-                                self.cfg=merge(self.cfg,job['args'])
+                                self.cfg.update(job['args'])
                                 self.restart.set() #main loop breaks and apply_config is called
                             #return current config in args
-                            self.state.update_job(jid,args=self.cfg,state='done')
+                            self.state.update_job(jid,args=self.cfg.dump(),state='done')
 
                     #get cluster state
                     node_status=self.state.get_nodes()
@@ -296,9 +296,9 @@ class Meeseeks:
             cfg=request['config']
             if cfg: #if changes were pushed
                 self.logger.info('got config request: %s'%cfg)
-                self.cfg=merge(self.cfg,request['config'])
+                self.cfg.update(request['config'])
                 self.restart.set() #main loop breaks and apply_config is called
-            response['config']=self.cfg 
+            response['config']=self.cfg.dump()
         # Does not format nicely via netcat, because of newlines/tabs
         if 'options' in request:
             if 'pretty' in request['options'] and request['options']['pretty']:

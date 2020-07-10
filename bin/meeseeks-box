@@ -18,11 +18,11 @@ def signal_reload(*args):
 
 def config():
     cfgargs,args=cmdline_parser(sys.argv[1:])
-    cfg=merge(read_cfg_files(args),cfgargs)
+    cfg=Config(read_cfg_files(args),cfgargs)
     try: su(cfg.get('user'),cfg.get('group'))
     except Exception as e: print (e,file=sys.stderr)
     logging.basicConfig(**cfg.get('logging',{'level':logging.INFO}))
-    return cfg
+    return cfg.dump()
 
 meeseeks=Meeseeks(**config())
 

@@ -60,7 +60,7 @@ JSON config format, can also be specified on command line as key.subkey..=value|
 def apply_config(**cfg):
     global CFG,CLIENT,WATCH,logger
     logger.info('reloading config')
-    CFG=merge(CFG,cfg)
+    CFG.update(cfg)
     #load config defaults
     defaults=CFG.get('defaults',{})
 
@@ -120,7 +120,7 @@ def signal_reload(*args):
 def config():
     global logger
     cfgargs,args=cmdline_parser(sys.argv[1:])
-    cfg=merge(cfgargs,read_cfg_files(args))
+    cfg=Config(cfgargs,read_cfg_files(args))
     logging.basicConfig(**cfg.get('logging',{'level':logging.INFO}))
     #set name to name if specified, else default template, else executable
     name=cfg.get('name',
@@ -134,6 +134,8 @@ def config():
 if len(sys.argv) < 2: sys.exit(usage())
 
 #get config
+global CFG
+CFG=Config()
 apply_config(**config())
 
 #set signal handlers
