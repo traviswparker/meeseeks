@@ -8,19 +8,21 @@ import ssl
 import importlib
 
 class Config(object):
-    '''config key-value store, supports addressing subkeys using key.subkey.subkey format
+    '''config key-value store, supports merging in dicts
+    and addressing subkeys using [key.subkey.subkey] format
     '''
     def __init__(self,*args,**kwargs):
         self.__cfg={}
         self.update(*args,**kwargs)
         self.__unresolved=0 #unresolved variable count
-
+        self.autoresolve=True #set false to not resolve vars on update
+    
     def merge(self, a, b):
-        '''merges b into a if possible, replacing non-dict values
-            if merge_lists, list value in b will be appended to list in a
+        '''merges b into a if possible
+            dicts will be merged, non-dict values will be replaced
             !key in b will delete key from a
-            +key in b will append b[key] to list in a[key]
-            -key in b will remove b[key] items from list in a[key]'''
+            +key in b will append b[key] list to a[key] list
+            -key in b will remove b[key] items from a[key] list'''
         a=a.copy() #operate on copy of dest dict so we can delete keys
         for key in sorted(b): #process !keys before others
             merge_lists=diff_lists=False
@@ -86,9 +88,13 @@ class Config(object):
 
     def update(self,*args,**kwargs):
         '''merge in updates from dict(s) or kwargs
-        see Config.merge() for !/+/- key prefixes''' 
-        for arg in args: self.__cfg=self.merge(self.__cfg,arg)
-        if kwargs: self.__cfg=self.merge(self.__cfg,kwargs)
+        see merge() for !/+/- key prefixes
+        if autoresolve=True, returns count of unresolved vars''' 
+        cfg=self.dump()
+        for arg in args: cfg=self.merge(cfg,arg)
+        if kwargs: cfg=self.merge(cfg,kwargs)
+        self.__cfg=cfg
+        if self.autoresolve: return self.resolve()
 
     def __delitem__(self,k):
         '''deletes dotted key k
@@ -132,6 +138,8 @@ class Config(object):
         #dump config as dict
         return self.__cfg.copy()
 
+
+
 def import_plugin(plugin):
     '''imports by path.module.Plugin and returns the plugin class'''
     m=importlib.import_module('.'.join(plugin.split('.')[:-1]))
@@ -163,7 +171,7 @@ def cmdline_parser(args):
             if v.isnumeric(): v=int(v)
             elif ',' in v: v=list(v.split(','))
             elif not v: v={}
-            cfg.update({k:v})
+            cfg[k]=v #set vs. update to parse dotted-keys
         else: break #stop at first arg without =
         i+=1
     args=args[i:]

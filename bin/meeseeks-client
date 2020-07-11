@@ -172,7 +172,7 @@ try:
     logging.basicConfig(level=cfg.get('log',logging.INFO))
     logging.debug('%s %s %s %s'%(cfg,cmd,kwargs,args))
 
-    client=Client(**cfg) #create client and connect
+    client=Client(**cfg.dump()) #create client and connect
     
     #if we will be refreshing, wait until state populated
     if cfg.get('refresh'): client.wait()
