@@ -2,3 +2,4 @@
 **/*/*.pyc
 **/*/*.state
 **/*/*.history
+.vscode/settings.json

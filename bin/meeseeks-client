@@ -8,6 +8,7 @@ import time
 import pwd
 
 from meeseeks import Client
+from meeseeks.config import Config
 from meeseeks.util import *
 
 def usage():
@@ -144,7 +145,7 @@ def show(client,args,**kwargs):
     _print(nodes,0)
 
 #parse env vars
-cfg=Config(cmdline_parser(os.getenv('MEESEEKS_CONF','').split())[0])
+cfg=cmdline_parser(os.getenv('MEESEEKS_CONF','').split())[0]
 try:
     # cmd=first non cfg argument
     # args=remaining arguments 
@@ -172,7 +173,7 @@ try:
     logging.basicConfig(level=cfg.get('log',logging.INFO))
     logging.debug('%s %s %s %s'%(cfg,cmd,kwargs,args))
 
-    client=Client(**cfg.dump()) #create client and connect
+    client=Client(**cfg.copy()) #create client and connect
     
     #if we will be refreshing, wait until state populated
     if cfg.get('refresh'): client.wait()
@@ -257,7 +258,7 @@ try:
             if updates: pretty_print(updates)
             seq=dict((jid,job['seq']) for (jid,job) in jobs.items())
             time.sleep(cfg.get('refresh'))
-except Exception as e: print (e,file=sys.stderr)
+except Exception as e: raise e#print (e,file=sys.stderr)
 
 #if we were polling state, stop gracefully
 if cfg.get('refresh'): client.close()

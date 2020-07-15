@@ -13,6 +13,7 @@ from .state import State
 from .node import Node
 from .pool import Pool
 from .util import *
+from .config import Config
 
 class RequestHandler(socketserver.StreamRequestHandler):
     '''control socket request handler'''
@@ -200,7 +201,7 @@ class Meeseeks:
                                 self.cfg.update(job['args'])
                                 self.restart.set() #main loop breaks and apply_config is called
                             #return current config in args
-                            self.state.update_job(jid,args=self.cfg.dump(),state='done')
+                            self.state.update_job(jid,args=self.cfg.copy(),state='done')
 
                     #get cluster state
                     node_status=self.state.get_nodes()
@@ -298,7 +299,7 @@ class Meeseeks:
                 self.logger.info('got config request: %s'%cfg)
                 self.cfg.update(request['config'])
                 self.restart.set() #main loop breaks and apply_config is called
-            response['config']=self.cfg.dump()
+            response['config']=self.cfg.copy()
         # Does not format nicely via netcat, because of newlines/tabs
         if 'options' in request:
             if 'pretty' in request['options'] and request['options']['pretty']:

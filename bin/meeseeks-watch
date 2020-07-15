@@ -11,6 +11,7 @@ import glob
 from meeseeks.util import *
 from meeseeks.client import Client
 from meeseeks.watch import Watch
+from meeseeks.config import Config
 
 global CFG,WATCH,CLIENT,SHUTDOWN,logger
 logger=None
@@ -121,14 +122,14 @@ def signal_reload(*args):
 def get_config():
     global logger
     cfgargs,args=cmdline_parser(sys.argv[1:])
-    cfg=Config(cfgargs,read_cfg_files(args))
+    cfg=Config(read_cfg_files(args),cfgargs) #we want cmdline to override files
     logging.basicConfig(**cfg.get('logging',{'level':logging.INFO}))
     #set name to name if specified, else default template, else executable
     name=cfg.get('name',
                   cfg.get('defaults',{}).get('template',
                     os.path.basename(sys.argv[0])))
     logger=logging.getLogger(name=name)
-    return cfg.dump()
+    return cfg
 
 
 #do we have args?

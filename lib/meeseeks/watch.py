@@ -11,6 +11,7 @@ import fnmatch
 
 from .job import Job
 from .util import *
+from .config import Config
 
 class Watch(threading.Thread):
     '''meeseeks-watch file watcher thread'''
@@ -20,7 +21,6 @@ class Watch(threading.Thread):
         self.__files={} #map of glob -> files matching
         self.__cache=[] #cached DirEntries
         self.cfg=Config()
- #       self.cfg.autoresolve=False
         self.config(**cfg)
         self.cfg.update(name=name)
         self.logger=logging.getLogger(name)
@@ -70,7 +70,7 @@ class Watch(threading.Thread):
             jobspec=jobspec[subindex]
             if jobspec:
                 jobspec=jobspec.copy() #don't modify configured spec
-                c=self.cfg.dump() #get watch config
+                c=self.cfg.copy() #get watch config
                 c.update(**kwargs) #get extra jobargs
                 #add in file
                 jid=str(index)

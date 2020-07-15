@@ -6,6 +6,7 @@ import signal
 import pwd
 
 from meeseeks.util import *
+from meeseeks.config import Config
 from meeseeks.service import Meeseeks
 
 def signal_stop(*args):
@@ -18,11 +19,11 @@ def signal_reload(*args):
 
 def config():
     cfgargs,args=cmdline_parser(sys.argv[1:])
-    cfg=Config(read_cfg_files(args),cfgargs)
+    cfg=Config(read_cfg_files(args),cfgargs) #we want cmdline to override files
     try: su(cfg.get('user'),cfg.get('group'))
     except Exception as e: print (e,file=sys.stderr)
     logging.basicConfig(**cfg.get('logging',{'level':logging.INFO}))
-    return cfg.dump()
+    return cfg
 
 meeseeks=Meeseeks(**config())
 
