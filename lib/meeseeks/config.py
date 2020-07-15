@@ -124,7 +124,7 @@ class Config(object):
                 bkey,key=key,key[1:]
             elif str(key).endswith('+'): #prepend list
                 prepend_list=True
-                bkey,ke=key,key[:-1]
+                bkey,key=key,key[:-1]
             elif str(key).startswith('-'): #diff list
                 diff_list=True
                 bkey,key=key,key[1:]
