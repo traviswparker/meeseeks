@@ -278,8 +278,8 @@ killed: job was killed, rc may be set if job was running.
                 "reverse" : <bool> files are ASCII sorted Z->A, 9->0 to handle datestamps newest to oldest. 
                                     If true, reverse sort the files (oldest to newest)
                 "split" : <character> optional character to split filenames on to generate match parts.
-                "fileset" : <int> match filename parts across lists to create filesets
-                    a fileset is complete when the first <int> parts of a filename in each list matches.
+                "match" : <int> match filename parts across lists to create filesets
+                    a fileset is complete when the first <int> parts of a filename in each list exists.
                     files will not be processed until a complete fileset exists. 
                     For example,
                     glob: [*.foo,*.bar,*.baz]
@@ -287,6 +287,8 @@ killed: job was killed, rc may be set if job was running.
                     match: 2
                     the set will be complete if we have 20200101.00.foo, 20200101.00.bar, 20200101.00.baz
                     default is 0 (no filesets)
+                "skip" : <suffix> fileset will be skipped and marked done if <matched parts>.<suffix> is present
+                    if skip: out in above fileset example, job will be skipped if 20200101.00.out exists
                 "updated" : <bool> if set, files will be reprocessed if modtime changes. Default false.
                                     If multiple jobs are defined, only the first will be run on file update.
                 "retry" : <bool> if true, files with failed jobs will be reprocessed. Default true.

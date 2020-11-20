@@ -34,12 +34,13 @@ class Watch(threading.Thread):
         self.refresh=int(cfg.get('refresh',10))
         self.rescan=int(cfg.get('rescan',60))/self.refresh
 
-    def set_file_status(self,index,filename,job):
+    def set_file_status(self,index,filename,job=None,status=None):
         '''set the file processing status and last modified time
         override this in a subclass to store status a different way'''
-        self.logger.debug('set %s %s %s'%(index,filename,job))
-        with open(os.path.join(self.path,'._%s_%s_%s.%s'%(self.name,index,filename,job['state'])),'w') as fp: 
-            json.dump(job,fp,sort_keys=True,indent=4)
+        if job: status=job['state']
+        self.logger.debug('set %s %s %s'%(index,filename,status))
+        with open(os.path.join(self.path,'._%s_%s_%s.%s'%(self.name,index,filename,status)),'w') as fp: 
+            if job: json.dump(job,fp,sort_keys=True,indent=4)
         if self.cfg.get('updated'): #save mtime
             with open(os.path.join(self.path,'._%s_%s_%s.%s'%(self.name,index,filename,'mtime')),'w') as fp:
                 fp.writelines((str(os.stat(os.path.join(self.path,filename)).st_mtime)))
@@ -58,6 +59,13 @@ class Watch(threading.Thread):
             except: pass #no saved mtime, consider done
             return True
         return False #not processed
+
+    def check_file_skip(self,mpat,split,skip):
+        '''check if we skip this file'''
+        skip_file=split.join([mpat,skip])
+        self.logger.debug('%s skip if %s'%(mpat,os.path.join(self.path,skip_file)))
+        if os.path.exists(os.path.join(self.path,skip_file)): return skip_file
+        return False
 
     def start_job(self,index,subindex=0,file=None,fparts=[],**kwargs):
         #index is jobs index
@@ -126,11 +134,12 @@ class Watch(threading.Thread):
         try:
             while not self.shutdown.is_set():
 
-                match=self.cfg.get('fileset')
                 globs=self.cfg.get('glob')
                 jobs=self.cfg.get('jobs',[])
                 if globs and type(globs) is not list: globs=[globs]
                 split=self.cfg.get('split')
+                match=self.cfg.get('match')
+                skip=self.cfg.get('skip')
                 max_index=self.cfg.get('max_index')
                 max_count=int(self.cfg.get('count',0))
 
@@ -213,8 +222,14 @@ class Watch(threading.Thread):
                                                     if f.name.startswith(mpat):
                                                         fileset[g]=f #found it
                                                         break
-                                            logging.debug('fileset %s matching %s %s'%(index,mpat,fileset))
+                                            self.logger.debug('jobspec %s fileset matching %s: %s'%(index,mpat,fileset))
                                             if len(fileset) == len(globs): #complete fileset
+                                                if skip:
+                                                    skip_fileset=self.check_file_skip(mpat,split,skip)
+                                                    if skip_fileset:
+                                                        self.logger.debug('%s exists, skip fileset %s'%(skip_fileset, mpat))
+                                                        self.set_file_status(index,file.name,status='done')
+                                                        continue
                                                 jobargs.update(fileset=[ fileset[g].name for g in globs ])
                                                 self.logger.debug(jobargs)
                                                 start=True
@@ -253,12 +268,15 @@ try:
     class WatchXattr(Watch):
         '''replace the set/check file status methods to use filesystem extended attributes'''
         
-        def set_file_status(self,index,filename,job):
+        def set_file_status(self,index,filename,job=None,status=None):
             '''set the file processing status and last modified time attrs'''
-            self.logger.debug('set %s %s %s'%(index,filename,job))
+            if job: status=job['state']
+            self.logger.debug('set %s %s %s'%(index,filename,status))
             attr='user.%s_%s'%(self.name,index)
             f=os.path.join(self.path,filename)
-            xattr.setxattr(f,attr+'.'+job['state'],json.dumps(job).encode())
+            if job: data=json.dumps(job).encode()
+            else: data=''.encode()
+            xattr.setxattr(f,attr+'.'+job['state'],data)
             if self.cfg.get('updated'): #save mtime
                 xattr.setxattr(f,attr+'.mtime',str(os.stat(os.path.join(self.path,filename)).st_mtime).encode())
 
