@@ -277,18 +277,20 @@ killed: job was killed, rc may be set if job was running.
                     If no globs are defined, this watch will simply ensure the jobs defined are always running
                 "reverse" : <bool> files are ASCII sorted Z->A, 9->0 to handle datestamps newest to oldest. 
                                     If true, reverse sort the files (oldest to newest)
-                "split" : <character> optional character to split filenames on to generate match parts.
-                "match" : <int> match filename parts across lists to create filesets
-                    a fileset is complete when the first <int> parts of a filename in each list exists.
-                    files will not be processed until a complete fileset exists. 
+                "split" : <character> optional character to split filenames on to generate filename parts.
+                "match" : <int> match filename parts across globs to create filesets
+                    a fileset is complete when the specified parts of a filename in each list exist.
+                    <int> filename parts from the first glob are used as the key
+                    files will not be processed until a complete fileset exists, unless partial is set true.
                     For example,
                     glob: [*.foo,*.bar,*.baz]
                     split: .
                     match: 2
                     the set will be complete if we have 20200101.00.foo, 20200101.00.bar, 20200101.00.baz
                     default is 0 (no filesets)
+                "partial" : <bool> if true, process fileset as soon as a file from the first glob is set
                 "skip" : <suffix> fileset will be skipped and marked done if <matched parts>.<suffix> is present
-                    if skip: out in above fileset example, job will be skipped if 20200101.00.out exists
+                    if skip: "out: in above fileset example, job will be skipped if 20200101.00.out exists
                 "updated" : <bool> if set, files will be reprocessed if modtime changes. Default false.
                                     If multiple jobs are defined, only the first will be run on file update.
                 "retry" : <bool> if true, files with failed jobs will be reprocessed. Default true.
@@ -326,9 +328,9 @@ killed: job was killed, rc may be set if job was running.
         file[1] will now be file[2] but if jobs[2] does not exist nothing happens.
 
     if a job is a list of jobspecs:
-        the first jobspec will be submitted for files from the first list,    
-        the second jobspec for the second list, and so on.
-        the highest jobspec will be used for any additional lists.
+        the first jobspec will be submitted for files from the first list,
+        the second jobspec for the second, and so on.
+        the highest jobspec will be used for any additional.
         lists with an empty/null jobspec will have the files immediately marked as processed
 
     in jobspecs, the following formats are available for strings:
@@ -336,8 +338,8 @@ killed: job was killed, rc may be set if job was running.
         %(filename)s    filename
         %(file)s        full path to file including filename
         %(fileset)s     all filenames in the fileset
-        %(fileset<n>)s  if a fileset, will be list<n> filename
-        %(<n>)s         part <n> of the filename
+        %(fileset<n>)s if a fileset, will be list<n> filename
+        %(<n>)s         part <n> of the filename or fileset match pattern
         %(index)s       job index
         %(<k>)s         key <k> in the watch config, such as %(path)s
 

@@ -87,9 +87,8 @@ class Watch(threading.Thread):
                     c.update(filename=file.name,file=file.path)
                     #add in filename parts
                     c.update((str(i),p) for (i,p) in enumerate(fparts))
-                    #add in fileset 
-                    if 'fileset' in kwargs: 
-                        c.update(('fileset'+str(i),f) for (i,f) in enumerate(kwargs['fileset']))
+                    #add in fileset
+                    c.update(('fileset'+str(i),f) for (i,f) in enumerate(kwargs['fileset']))
                     jid+='_'+file.name
                 #do format string subs
                 for k,v in jobspec.items():
@@ -140,6 +139,7 @@ class Watch(threading.Thread):
                 split=self.cfg.get('split')
                 match=self.cfg.get('match')
                 skip=self.cfg.get('skip')
+                partial=self.cfg.get('partial')
                 max_index=self.cfg.get('max_index')
                 max_count=int(self.cfg.get('count',0))
 
@@ -186,18 +186,47 @@ class Watch(threading.Thread):
                             self.__files[glob]=[file for file in self.__cache if fnmatch.fnmatch(file.name,glob)]
                             self.logger.debug('%s: %s files'%(glob,len(self.__files[glob])))
 
-                        #check files and start jobs
-                        for list_index,glob in enumerate(globs): #list index (index of glob->file list)
-                            if split and match and list_index: break #if fileset, only use the first list
+                        #build filesets
+                        for glob_index,glob in enumerate(globs): #list index (index of glob->file list)
+                            if split and match and glob_index: break #if fileset, only use the first list
+                            filesets=[] #sets of files to process
                             for file_index,file in enumerate(self.__files[glob]): #index down file list
                                 if max_index and file_index > max_index: break
+                                fparts=file.name.split(split) #get filename parts
+                                #if match mode
+                                fileset=[]
+                                fileset_complete=True
+                                if split and match:
+                                    mpat=split.join(fparts[:match]) #generate match string
+                                    for g,files in self.__files.items(): #check across lists
+                                        matched=[f for f in files if f.name.startswith(mpat)]
+                                        if matched: fileset.extend(matched)
+                                        else: 
+                                            fileset_complete=False
+                                            break
+                                    if not fileset_complete and not partial: continue
+                                    if skip:
+                                        skip_fileset=self.check_file_skip(mpat,split,skip)
+                                        if skip_fileset:
+                                            self.logger.debug('%s exists, skip fileset %s'%(skip_fileset, mpat))
+                                            continue
+                                    self.logger.debug('fileset match %s: %s %s'%(mpat,fileset,fileset_complete))
+                                else: fileset=[file] #not match mode, single file set
+                                filesets.append(fileset) #this fileset can be processed 
+                            self.logger.debug('%s filesets to check'%len(filesets))
+
+                            #check status and start jobs
+                            for file_index,fileset in enumerate(filesets):
+                                file=fileset[0] #if not matching, fileset will be single file. If matching, first file is key.
+                                fparts=file.name.split(split) #get filename parts
                                 job_index=min(file_index,len(jobs)-1) #use matching or last job index available
                                 #check job 0 to file_index for run_all, just file_ index if not
                                 if self.cfg.get('run_all',True): min_index=0
                                 else: min_index=job_index
                                 for index in range(min_index,job_index+1): 
-                                    start,jobargs=False,{}
-                                    if not jobs[index]: continue #no job for this index, skip it.
+                                    if not jobs[index]: 
+                                        self.logger.debug ("No job at index %s for %s"%(index,fileset))
+                                        continue #no job for this index, skip it.
                                     #check file status
                                     try: 
                                         #job for this file is still running, don't start the next one
@@ -210,35 +239,10 @@ class Watch(threading.Thread):
                                     except Exception as e:
                                         self.logger.warning("%s %s"%(file.name,e))
                                         status=True #skip this one it smells funny
-
                                     if not status: #if file is not running and not processed
-                                        fparts=file.name.split(split) #get filename parts
-                                        #if fileset mode
-                                        if split and match:
-                                            mpat=split.join(fparts[:match]) #generate match string
-                                            fileset={} #files across lists that match 
-                                            for g,files in self.__files.items(): #check across lists
-                                                for f in files:
-                                                    if f.name.startswith(mpat):
-                                                        fileset[g]=f #found it
-                                                        break
-                                            self.logger.debug('jobspec %s fileset matching %s: %s'%(index,mpat,fileset))
-                                            if len(fileset) == len(globs): #complete fileset
-                                                if skip:
-                                                    skip_fileset=self.check_file_skip(mpat,split,skip)
-                                                    if skip_fileset:
-                                                        self.logger.debug('%s exists, skip fileset %s'%(skip_fileset, mpat))
-                                                        self.set_file_status(index,file.name,status='done')
-                                                        continue
-                                                jobargs.update(fileset=[ fileset[g].name for g in globs ])
-                                                self.logger.debug(jobargs)
-                                                start=True
-                                        #not fileset
-                                        else: start=True
-                                    #start job
-                                    if start:
-                                        self.start_job(index,list_index,file,fparts,**jobargs)
+                                        self.start_job(index,glob_index,file,fparts,fileset=[f.name for f in fileset])
                                         break #if run_all, don't start the next index job until this one is finished
+                                    self.logger.debug ("index %s job status %s for %s"%(index,status,fileset))
                 
                 else: #just track job
                     for index in range(len(jobs)):
