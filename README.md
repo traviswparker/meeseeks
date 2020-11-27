@@ -261,8 +261,7 @@ killed: job was killed, rc may be set if job was running.
         "client" : { ... configuration for connecting to meeseeks ... },
         
         "template" : {
-            null|"<name>": { defines a watch template, see spec for watch. 
-                            A template with a null name will be auto-applied to all watches }
+            "<name>": { defines a watch template, see spec for watch. }
         },
 
         "watch" : {

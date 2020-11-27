@@ -81,7 +81,8 @@ def apply_config(cfg):
         if templates: #for each template build a watch config
             for template in templates: 
                 #build watch config defaults+template+source
-                watch['_'.join([cfg['name'],template,w])]=Config(defaults,cfg.get('template',{}).get(template,{}),wsrc)
+                if template in cfg.get('template',{}):
+                    watch['_'.join([cfg['name'],template,w])]=Config(defaults,cfg['template'][template],wsrc)
         else: watch['_'.join([cfg['name'],w])]=Config(defaults,wsrc) #no template, use defaults+source
 
     for w in WATCH.copy(): #stop removed watches
