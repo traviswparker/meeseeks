@@ -21,8 +21,6 @@ class Job():
     these attributes at kept in sync with the actual jobs
     Job.info can be used to read the cached job without refreshing'''
 
-    JOB_ALIVE=['new','running'] #jobs in these states are tracked
-
     def __init__(self,*args,**kwargs):
         '''create a job spec and a client if not already connected
     if no Client object is passed in the client= argument, use the global client
@@ -110,17 +108,17 @@ class Job():
 
     def is_alive(self):
         '''returns True if job (or if multi, any jobs) have not finished'''
-        if self.multi: return any(state in self.JOB_ALIVE for (jid,state) in self.state.items())
-        else: return self.state in self.JOB_ALIVE
+        if self.multi: return any(active for (jid,active) in self.active.items())
+        else: return self.active
 
     def poll(self):
         '''returns info if a job finished, None if running
         if multi, returns finished jobs or empty dict if none'''
         if self.multi: 
             self.__getattr__() #refresh cache
-            return dict((jid,job) for (jid,job) in self.info.items() if (job['state'] not in self.JOB_ALIVE))
+            return dict((jid,job) for (jid,job) in self.info.items() if not job['active'])
         else:
-            if self.state in self.JOB_ALIVE: return None #refresh and get active flag
+            if self.is_alive(): return None #refresh and get active flag
             else: return self.info
 
 
