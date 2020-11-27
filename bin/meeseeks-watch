@@ -38,7 +38,7 @@ JSON config format, can also be specified on command line as key.subkey..=value|
     },
     "watch" : {
         "<name>": { 
-            "template": <name> applies a template to this watch config.
+            "template": <name> or [ <name>, ... ] applies templates to this watch config.
             "path" : <path to watch>
             "glob" : <pattern> | [ <pattern>, ... ]
             
@@ -72,28 +72,22 @@ def apply_config(cfg):
         CLIENT=Client(**ccfg)
         CLIENT.wait() #wait for the client to sync initial state
 
-    #configure watch threads
-    #prefix names and apply default template if set
-    if 'run' in cfg:
-        run=cfg.get('run')
-        watch={}
-        if type(run) is not list: run=[run]
-        for t in run:
-            src=cfg.get('watch',{}).copy()
-            logger.info('applying template %s'%t)
-            watch.update( dict( (t+'-'+w,{'template':t,**d}) for (w,d) in src.items()) )
-    else: watch=cfg.get('watch',{})
+    #build watch configs
+    watch={}
+    for w,wsrc in cfg.get('watch',{}).items():
+        #run key > watch template > default template > None
+        templates=cfg.get('run',wsrc.get('template',defaults.get('template'))) 
+        if type(templates) is not list: templates=[templates]
+        if templates: #for each template build a watch config
+            for template in templates: 
+                #build watch config defaults+template+source
+                watch['_'.join([cfg['name'],template,w])]=Config(defaults,cfg.get('template',{}).get(template,{}),wsrc)
+        else: watch['_'.join([cfg['name'],w])]=Config(defaults,wsrc) #no template, use defaults+source
 
     for w in WATCH.copy(): #stop removed watches
         if w not in watch: stop_watch(w)
     
-    for w in watch.keys(): #start/config watches
-        #apply template if set in watch config, 
-        #if template[None] exists it will auto-apply if no other template set
-        wcfg={  **defaults,
-                **cfg.get('template',{}).get(watch[w].get('template',defaults.get('template')),{}),
-                **watch[w]
-            } 
+    for w,wcfg in watch.items(): #start new/config existing watches
         if w not in WATCH: #add new
             if 'plugin' in wcfg:
                 w_class=import_plugin(wcfg['plugin'])
@@ -124,11 +118,9 @@ def get_config():
     cfgargs,args=cmdline_parser(sys.argv[1:])
     cfg=Config(read_cfg_files(args),cfgargs) #we want cmdline to override files
     logging.basicConfig(**cfg.get('logging',{'level':logging.INFO}))
-    #set name to name if specified, else default template, else executable
-    name=cfg.get('name',
-                  cfg.get('defaults',{}).get('template',
-                    os.path.basename(sys.argv[0])))
-    logger=logging.getLogger(name=name)
+    #set name to name if specified, else executable
+    cfg.update(name=cfg.get('name', os.path.basename(sys.argv[0])))
+    logger=logging.getLogger(name=cfg['name'])
     return cfg
 
 

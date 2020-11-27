@@ -253,8 +253,10 @@ killed: job was killed, rc may be set if job was running.
 
     {
         "defaults" : { ... defaults for all other sections ... },
-        
-        "run" : <template(s)> will apply template(s) to all watch configs to generate <template>-<name>,
+         
+        "name" : <string> root name for logging/jobs
+
+        "run" : <template(s)> will apply template(s) to all watch configs.
 
         "client" : { ... configuration for connecting to meeseeks ... },
         
@@ -264,9 +266,10 @@ killed: job was killed, rc may be set if job was running.
         },
 
         "watch" : {
-            "<name>": { 
-                "template": <name> applies template <name> to this watch config. 
+            "<name>": {
+                "template": <template(s)> applies template(s) to this watch config. 
                     Keys defined in watch override keys in template
+                    Name in logging/jobs will be root_name-template_name-watch_name
                 "plugin": optional <path.module.Class> to provide this watch instance.
                            meeseeks.watch.WatchXattr is included for tracking state with filesystem xattrs 
                 "path" : <path to watch>
