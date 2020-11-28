@@ -106,21 +106,30 @@ class Job():
         self.client.kill_jobs(self.jid)
         self.__getattr__() #refresh cache
 
+    
+    def poll(self,wait=None):
+        '''returns info if a job finished, 
+        waits forever if wait=True or for wait seconds, then returns None if running
+        if multi, returns finished jobs or empty dict if none'''
+        t=0
+        while True:
+            #jobs are not finished if state='new' or active=True
+            if self.multi: 
+                self.__getattr__() #refresh cache
+                r=dict((jid,job) for (jid,job) in self.info.items() if not \
+                    (job.get('state') == 'new' or job.get('active')) )
+                if r: return r
+            elif not (self.state == 'new' or self.active): return self.info #refresh and get active flag
+            if wait:
+                if (wait is not True) and t==int(wait): break
+                time.sleep(1)
+                t+=1
+            else: break
+
     def is_alive(self):
         '''returns True if job (or if multi, any jobs) have not finished'''
-        if self.multi: return any(active for (jid,active) in self.active.items())
-        else: return self.active
-
-    def poll(self):
-        '''returns info if a job finished, None if running
-        if multi, returns finished jobs or empty dict if none'''
-        if self.multi: 
-            self.__getattr__() #refresh cache
-            return dict((jid,job) for (jid,job) in self.info.items() if not job['active'])
-        else:
-            if self.is_alive(): return None #refresh and get active flag
-            else: return self.info
-
+        if self.poll(): return False
+        else: return True
 
 class Notify(threading.Thread):
     '''keeps running Job objects tracked with the client
