@@ -229,7 +229,7 @@ class Watch(threading.Thread):
                                         continue #no job for this index, skip it.
                                     #check file status
                                     try: 
-                                        #job for this file is still running, don't start the next one
+                                        #job for this file is still running
                                         if '%s_%s'%(index,file.name) in self.__jobs: break 
                                         #is file done (and not updated if updated=1)?
                                         status=self.check_file_status(index,file) 
@@ -263,8 +263,7 @@ class Watch(threading.Thread):
         #kill all jobs and verify stop before exiting, to ensure client isn't disposed of before sync
         for jid,job in self.__jobs.items(): 
             self.logger.info('killing job %s'%jid)
-            job.kill()
-            while job.is_alive(): time.sleep(1)
+            job.kill(True)
 
 try:
     import xattr

@@ -256,8 +256,6 @@ killed: job was killed, rc may be set if job was running.
          
         "name" : <string> root name for logging/jobs
 
-        "run" : <template(s)> will apply template(s) to all watch configs.
-
         "client" : { ... configuration for connecting to meeseeks ... },
         
         "template" : {
@@ -274,7 +272,7 @@ killed: job was killed, rc may be set if job was running.
                 "path" : <path to watch>
                 "glob" : <pattern> | [ <pattern>, ... ]
                     Watches the files matching the pattern. 
-                    A list of patterns can be specified to watch multiple lists of files
+                    A list of patterns can be specified to generate multiple lists of files
                     Use a glob of "*" for all files
                     If no globs are defined, this watch will simply ensure the jobs defined are always running
                 "reverse" : <bool> files are ASCII sorted Z->A, 9->0 to handle datestamps newest to oldest. 
@@ -290,7 +288,7 @@ killed: job was killed, rc may be set if job was running.
                     match: 2
                     the set will be complete if we have 20200101.00.foo, 20200101.00.bar, 20200101.00.baz
                     default is 0 (no filesets)
-                "partial" : <bool> if true, process fileset as soon as a file from the first glob is set
+                "partial" : <bool> if true, process fileset as soon as a file from the first glob is present
                 "skip" : <suffix> fileset will be skipped and marked done if <matched parts>.<suffix> is present
                     if skip: "out: in above fileset example, job will be skipped if 20200101.00.out exists
                 "updated" : <bool> if set, files will be reprocessed if modtime changes. Default false.
@@ -320,27 +318,27 @@ killed: job was killed, rc may be set if job was running.
         }
     }
 
-    if a jobspec is empty or null, do nothing.
-    if only one job is defined, this job will be run on all files
-    if multiple jobs are defined, files will have the jobs run on them in sequence as more files appear
+    if file list(s) have been generated, jobs[n] is run on file[n] in each list:
+        if only one job is defined, this job will be run on all files
+        if multiple jobs are defined, files will have the jobs run on them in sequence as more files appear
+        if a jobspec is empty or null, do nothing.
 
-    for example, when a new file[0] appears:
-        jobs[0] will run on new file[0]
-        previously processed file[0] will now be file[1], so jobs[1] will run on it
-        file[1] will now be file[2] but if jobs[2] does not exist nothing happens.
+        for example, if jobs[0] and jobs[1] are defined, when a new file[0] appears:
+            jobs[0] will run on new file[0]
+            previously processed file[0] will now be file[1], so jobs[1] will run on it.
+            file[1] will now be file[2] but if jobs[2] does not exist nothing happens.
 
-    if a job is a list of jobspecs:
-        the first jobspec will be submitted for files from the first list,
-        the second jobspec for the second, and so on.
-        the highest jobspec will be used for any additional.
-        lists with an empty/null jobspec will have the files immediately marked as processed
-
-    in jobspecs, the following formats are available for strings:
+        if multiple file lists, each jobs[n] can also be a list of jobspecs:
+            jobs[n][0] will be submitted for file[n] from list[0],
+            jobs[n][1] for list[1][n],
+            jobs[n][-1] will process any remaining lists.
+        
+    in jobspecs, the following format keys available:
         %(name)s        name of this watch
         %(filename)s    filename
         %(file)s        full path to file including filename
         %(fileset)s     all filenames in the fileset
-        %(fileset<n>)s if a fileset, will be list<n> filename
+        %(fileset<n>)s if a fileset, will be glob[n] filename
         %(<n>)s         part <n> of the filename or fileset match pattern
         %(index)s       job index
         %(<k>)s         key <k> in the watch config, such as %(path)s
@@ -363,7 +361,7 @@ killed: job was killed, rc may be set if job was running.
         ...
     }
     and apply templates globally with:
-        meeseeks-watch run=<template>,<template>,<template> templates.cfg paths.cfg
+        meeseeks-watch defaults.template=<template>,<template>,<template> templates.cfg paths.cfg
     generated watch names will be <template>-<name>
 
 

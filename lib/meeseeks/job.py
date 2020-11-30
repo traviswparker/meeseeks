@@ -101,12 +101,6 @@ class Job():
             _NOTIFY.add(self)
         return self.jid
     
-    def kill(self):
-        '''stop running job(s)'''
-        self.client.kill_jobs(self.jid)
-        self.__getattr__() #refresh cache
-
-    
     def poll(self,wait=None):
         '''returns info if a job finished, 
         waits forever if wait=True or for wait seconds, then returns None if running
@@ -126,10 +120,15 @@ class Job():
                 t+=1
             else: break
 
+    def kill(self,wait=None):
+        '''stop running job(s)'''
+        self.client.kill_jobs(self.jid)
+        self.__getattr__() #refresh cache
+        return self.poll(wait)
+
     def is_alive(self):
         '''returns True if job (or if multi, any jobs) have not finished'''
-        if self.poll(): return False
-        else: return True
+        return not self.poll()
 
 class Notify(threading.Thread):
     '''keeps running Job objects tracked with the client
