@@ -239,8 +239,8 @@ try:
         if 'file' in kwargs: kwargs.update(read_cfg_files(kwargs['file']))
         if args:
             for node in args: 
-                pretty_print(client.submit(pool='__config',node=node,args=kwargs))
-        else: pretty_print(client.request(dict(config=kwargs))) #peer config push
+                pretty_print(client.submit(pool='__config',node=node,args=kwargs.copy()))
+        else: pretty_print(client.request(dict(config=kwargs.copy()))) #peer config push
 
     elif cmd == 'show' or cmd.startswith('stat'): show(client,args,**kwargs) #pretty print full cluster
 
