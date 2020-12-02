@@ -78,6 +78,7 @@ def su(uid=None,gid=None,sub=False):
                 os.seteuid(os.getuid())
                 os.setgid(gid)
                 os.setuid(uid)
+                os.setsid() #make session leader so kill works
             return preexec_fn
         else:
             os.seteuid(os.getuid())

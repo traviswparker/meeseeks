@@ -86,11 +86,11 @@ class Task(threading.Thread):
         if stderr: self.info['stderr_data']=base64.b64encode(stderr).decode()
 
     def kill(self,sig=9): 
-        #kill the subprocess
+        #kill the process group
         #we spawn another subprocess to do this
         #(we might need to switch back to root and then to the job user, 
         # and we don't want to change the euid/egid of the parent)
-        subprocess.Popen( ['kill','-%s'%sig,'%s'%self.__sub.pid], 
+        subprocess.Popen( ['kill','-%s'%sig,'-%s'%self.__sub.pid], 
             stdout=subprocess.PIPE,stderr=subprocess.PIPE,
             preexec_fn=su(self.uid,self.gid,sub=True) ).communicate()
 
