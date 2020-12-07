@@ -124,7 +124,7 @@ def show(client,args,**kwargs):
                 l=''
                 if 'n' in args: l+='\t'*i+'\t'
                 if 'p' in args: l+='\t'
-                else: l+='%s\t'%pn
+                #else: l+='%s\t'%pn
                 if 'j' in args:
                     for (jid,job) in sorted(jobs.items(),key=lambda j: (j[1].get('state')) ):
                         flags=''
