@@ -220,7 +220,6 @@ class State(threading.Thread):
                 if 'ts' not in data: data['ts']=time.time() #if no timestamp, set current
                 self.__jobs.setdefault(jid,{}).update(seq=self.__seq,**data)
                 self.__seq+=1
-                self.logger.debug('%s:%s'%(jid,data))
                 return self.__jobs.get(jid)
             except Exception as e: self.logger.warning(e,exc_info=True)
 
@@ -343,6 +342,8 @@ class State(threading.Thread):
                                 self.logger.warning('expiring active job %s on %s'%(jid,job.get('node')))
                                 #set job to failed
                                 self.__update_job(jid,state='failed',error='expired',fail_count=job.get('fail_count',0)+1)
+                            #bump the timestamp on the job to ensure it has been forwarded to the proper node
+                            else: self.__update_job(jid)
                             
                     #scan for jobs to restart/retry/resubmit
                     for jid,job in self.__jobs.items():

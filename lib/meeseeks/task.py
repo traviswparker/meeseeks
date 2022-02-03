@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
-import threading
+from multiprocessing import Process, Manager
 import subprocess
 import base64
+import os
 from meeseeks.util import *
 
 '''PLUGIN API
@@ -12,7 +13,6 @@ from meeseeks.util import *
     The Pool will join() the task thread when task.poll() indicates an exit
     
     class Task(threading.Thread):
-        
         def __init__(self,job): #we're passed a job dict but we can't update it
             self.info={} #the Pool will use Task.info to update the job dict
             ...start the task thread here and update info...
@@ -27,75 +27,84 @@ from meeseeks.util import *
             False: task failed
 '''
 
-class Task(threading.Thread):
+class Task(Process):
     '''subprocess manager'''        
     def __init__(self,job):
-        popen_args={}
-        popen_args.update(job.get('config',{})) #add config if any
-        self.info={} #info to update job
-        self.stdin=self.stdout=self.stderr=None #file handles if redirecting
-        self.stdout_data=self.stderr_data=None #output if capturing
-        self.uid,self.gid=job.get('uid'),job.get('gid')
-
-        # stdin from file
-        stdin=job.get('stdin')
-        if stdin:
-            self.stdin=open(stdin,'rb')
-            popen_args.update(stdin=self.stdin)
-
-        # stdout to whatever is passed in, else defaults to PIPE
-        stdout=job.get('stdout')
-        if stdout: 
-            self.stdout=open(stdout,'ab')
-            popen_args.update(stdout=self.stdout)
-        else:
-            popen_args.update(stdout=subprocess.PIPE)
-
-        # stderr to whatever is passed in, else defaults to PIPE
-        stderr=job.get('stderr')
-        if stderr: 
-            self.stderr=open(stderr,'ab')
-            popen_args.update(stderr=self.stderr)
-        else:
-            popen_args.update(stderr=subprocess.PIPE)
-            
-        # start subprocess. If this raises we don't start a thread
-        self.__sub=subprocess.Popen( job.get('args'), 
-                    preexec_fn=su(self.uid,self.gid,sub=True),
-                    **popen_args)
-        self.info['pid']=self.__sub.pid #set pid in job
+        self.job=job
+        self.info=Manager().dict() #info to update job
         #thread will wait on subprocess
-        threading.Thread.__init__(self,name=self.__sub.pid,target=self.__task_run)
+        Process.__init__(self,target=self.__task_run)
         self.start() 
     
-    def __task_run(self): 
-        # block here until process finishes
-        stdout,stderr=self.__sub.communicate()
+    def __task_run(self):
+        uid,gid=os.geteuid(),os.getegid() #save current u/g
+        try:
+            popen_args={}
+            popen_args.update(self.job.get('config',{})) #add config if any
 
-        #clear pid and set rc
-        self.info['pid']=None
-        self.info['rc']=self.__sub.poll()
+            #switch to the user who will be running this job
+            su(self.job.get('uid'),self.job.get('gid'))
 
-        # close file handles
-        if self.stdin: self.stdin.close()
-        if self.stdout: self.stdout.close()
-        if self.stderr: self.stderr.close()
+            # stdin from file
+            stdin=self.job.get('stdin')
+            if stdin:
+                stdin=open(stdin,'rb')
+                popen_args.update(stdin=stdin)
 
-        # return output as a base64 string if we got any
-        if stdout: self.info['stdout_data']=base64.b64encode(stdout).decode()
-        if stderr: self.info['stderr_data']=base64.b64encode(stderr).decode()
+            # stdout to whatever is passed in, else defaults to PIPE
+            stdout=self.job.get('stdout')
+            if stdout: 
+                stdout=open(stdout,'ab')
+                popen_args.update(stdout=stdout)
+            else:
+                popen_args.update(stdout=subprocess.PIPE)
 
-    def kill(self,sig=9): 
-        #kill the process group
+            # stderr to whatever is passed in, else defaults to PIPE
+            stderr=self.job.get('stderr')
+            if stderr: 
+                stderr=open(stderr,'ab')
+                popen_args.update(stderr=stderr)
+            else:
+                popen_args.update(stderr=subprocess.PIPE)
+            
+            self.__sub=subprocess.Popen( self.job.get('args'), **popen_args)
+
+            #back to the meeseeks user/group so we can talk to the Manager
+            su(uid,gid)
+            self.info['pid']=self.__sub.pid #set pid in job
+
+            # block here until process finishes
+            stdout_data,stderr_data=self.__sub.communicate()
+
+            #clear pid and set rc
+            self.info['pid']=None
+            self.info['rc']=self.__sub.poll()
+
+            # close file handles
+            if stdin: stdin.close()
+            if stdout: stdout.close()
+            if stderr: stderr.close()
+
+            # return output as a base64 string if we got any
+            if stdout_data: self.info['stdout_data']=base64.b64encode(stdout_data).decode()
+            if stderr_data: self.info['stderr_data']=base64.b64encode(stderr_data).decode()
+
+        except Exception as e:
+            su(uid,gid) #back to meeseeks user
+            self.info['error']=str(e)
+
+    def kill(self,sig=9):
+        #kill the subprocess
         #we spawn another subprocess to do this
         #(we might need to switch back to root and then to the job user, 
         # and we don't want to change the euid/egid of the parent)
-        subprocess.Popen( ['kill','-%s'%sig,'-%s'%self.__sub.pid], 
+        pid=self.info.get('pid')
+        if pid:
+            subprocess.Popen( ['kill','-%s'%sig,'%s'%self.info['pid']], 
             stdout=subprocess.PIPE,stderr=subprocess.PIPE,
-            preexec_fn=su(self.uid,self.gid,sub=True) ).communicate()
+            preexec_fn=su(self.job.get('uid'),self.job.get('gid'),sub=True) ).communicate()
 
     def poll(self): 
         #return None until the thread exits so we can reliably capture output
         if self.is_alive(): return None
-        if self.__sub.poll() is None: self.__sub.kill() #thread is dead but subprocess is not, kill it
-        return (not self.__sub.poll()) #return True if success and False if failure
+        return (not self.info.get('error') and not self.info.get('rc')) #return True if rc=0 and False otherwise
