@@ -28,10 +28,10 @@ class Pool(threading.Thread):
     POOL_TYPE='Pool'
     TASK_CLASS=Task
 
-    def __init__(self,__node,__pool,__state,**cfg):
-        self.node=__node #node we are running on
-        self.pool=__pool #pool we service
-        self.state=__state #state thread
+    def __init__(self,node,pool,state,**cfg):
+        self.node=node #node we are running on
+        self.pool=pool #pool we service
+        self.state=state #state thread
         threading.Thread.__init__(self,daemon=True,name=self.node+'.'+self.POOL_TYPE+'.'+self.pool,target=self.__pool_run)
         self.logger=logging.getLogger(self.name)
         self.shutdown=threading.Event()

@@ -74,8 +74,8 @@ class State(threading.Thread):
     #states of inactive jobs
     JOB_INACTIVE=['done','failed','killed']
 
-    def __init__(self,__node=None,**cfg):
-        self.node=__node
+    def __init__(self,node=None,**cfg):
+        self.node=node
         name='State'
         if self.node: name=self.node+'.'+name
         threading.Thread.__init__(self,daemon=True,name=name,target=self.__state_run)
@@ -188,7 +188,7 @@ class State(threading.Thread):
         except Exception as e: self.logger.warning(e,exc_info=True)
         return None
 
-    def sync(self,jobs={},status={},remote_node=None):
+    def sync(self,jobs={},status={}):
         '''update local status cache with incoming status 
         and jobs not in local state or job ts >= local jobs ts'''
         with self.__lock:

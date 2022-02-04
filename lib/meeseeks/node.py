@@ -11,10 +11,10 @@ from .util import create_ssl_context
 class Node(threading.Thread):
     '''node poller/state sync thread
     initially we try to push all state to the node (sync_ts of 0)'''
-    def __init__(self,__node,__remote_node,__state,start_node=True,**cfg):
-        self.node=__node #node we are running on 
-        self.remote_node=__remote_node #node we connect to
-        self.state=__state
+    def __init__(self,this_node,remote_node,state,start_node=True,**cfg):
+        self.node=this_node #node we are running on 
+        self.remote_node=remote_node #node we connect to
+        self.state=state
         name='Node'
         if self.node:name=self.node+'.'+name
         if self.remote_node: name+='.'+self.remote_node
@@ -60,7 +60,7 @@ class Node(threading.Thread):
                     l=''
                     while True:
                         d=self.__socket.recv(65535).decode()
-                        if not d: raise Exception('disconnected from %s:%s',self.address,self.port)
+                        if not d: raise Exception('disconnected from %s:%s'%(self.address,self.port))
                         l+=d
                         if '\n' in l: return json.loads(l)
                 except Exception as e: 
@@ -106,7 +106,7 @@ class Node(threading.Thread):
                 if jobs: remote_seq=max(job['seq'] for job in jobs.values())
                 #get node status
                 status=response.get('nodes',{})
-                updated=self.state.sync(jobs,status,remote_node=self.remote_node)
+                updated=self.state.sync(jobs,status)
                 if sync or updated:
                     self.logger.debug('%s sent %s, updated %s, local_seq %s, remote_seq %s',
                         time.time(),len(sync),len(updated),local_seq,remote_seq)    
