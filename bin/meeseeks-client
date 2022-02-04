@@ -130,12 +130,16 @@ def show(client,args,**kwargs):
                         flags=''
                         rc=''
                         if job.get('active'): 
-                            flags+='A '
+                            flags+='A'
                             if 'start_ts' in job: rc='+'+str(int(time.time()-job['start_ts']))
-                        elif job.get('rc'): rc='(%s)'%job['rc']
-                        if job.get('error'): flags+='E '
-                        if job.get('hold'): flags+='H '
-                        if job.get('restart') or job.get('resubmit'): flags+='R '
+                        elif job.get('rc'): 
+                            rc='(%s'%job['rc']
+                            if job.get('retries') and job.get('fail_count'): rc+=' %s/%s'%(job['fail_count'],job['retries'])
+                            rc+=')'
+                        if job.get('error'): flags+='E'
+                        if job.get('hold'): flags+='H'
+                        if job.get('restart'): flags+='R'
+                        if job.get('resubmit'): flags+='S'
                         try: user=pwd.getpwuid(job.get('uid')).pw_name
                         except: user=job.get('uid')
                         print(l+'%s\t%s\t[%s]\t%s\t%s\t%s\t%s'%(
@@ -195,8 +199,8 @@ try:
         if pool and '@' in pool: 
             pool,node=pool.split('@',1)
             if ',' in node: node=node.split(',')
-        #set submit user in kwargs
-        kwargs.update(uid=os.geteuid())
+        #set submit user and environ in kwargs
+        kwargs.update(uid=os.geteuid(),env=dict(os.environ))
         #if we are refreshing submit locally and let it dispatch
         if cfg.get('refresh'): jids=[client.submit_job(pool=pool,args=args,node=node,**kwargs)]
         #submit directly

@@ -38,7 +38,7 @@ class Watch(threading.Thread):
         '''set the file processing status and last modified time
         override this in a subclass to store status a different way'''
         if job: status=job['state']
-        self.logger.debug('set %s %s %s'%(index,filename,status))
+        self.logger.debug('set %s %s %s',index,filename,status)
         with open(os.path.join(self.path,'._%s_%s_%s.%s'%(self.name,index,filename,status)),'w') as fp: 
             if job: json.dump(job,fp,sort_keys=True,indent=4)
         if self.cfg.get('updated'): #save mtime
@@ -63,7 +63,7 @@ class Watch(threading.Thread):
     def check_file_skip(self,mpat,split,skip):
         '''check if we skip this file'''
         skip_file=split.join([mpat,skip])
-        self.logger.debug('%s skip if %s'%(mpat,os.path.join(self.path,skip_file)))
+        self.logger.debug('%s skip if %s',mpat,os.path.join(self.path,skip_file))
         if os.path.exists(os.path.join(self.path,skip_file)): return skip_file
         return False
 
@@ -95,14 +95,14 @@ class Watch(threading.Thread):
                     if type(v) is str: jobspec[k]=v%c
                     elif type(v) is list: jobspec[k]=[e%c for e in v]
                 self.logger.debug(jobspec)
-                if file: self.logger.info('submit %s:%s %s for %s'%(index,subindex,jobspec.get('tags'),file.name))
-                else: self.logger.info('submit %s:%s %s'%(index,subindex,jobspec.get('tags')))
+                if file: self.logger.info('submit %s:%s %s for %s',index,subindex,jobspec.get('tags'),file.name)
+                else: self.logger.info('submit %s:%s %s',index,subindex,jobspec.get('tags'))
                 job=Job(client=self.client,**jobspec)
                 if job.start(): 
                     self.__jobs[jid]=job
                     return True
                 else: 
-                    self.logger.warning('submit %s:%s %s failed'%(index,subindex,jobspec.get('tags')))
+                    self.logger.warning('submit %s:%s %s failed',index,subindex,jobspec.get('tags'))
                     return False
         else: index=0 #use index 0 if no jobspec so file can be marked
         #no job started
@@ -110,7 +110,7 @@ class Watch(threading.Thread):
 
     def rescan_path(self):
         #rescans path
-        self.logger.debug('rescanning %s'%(self.path))
+        self.logger.debug('rescanning %s',self.path)
         minage,maxage,get_mtime=self.cfg.get('min_age'),self.cfg.get('max_age'),self.cfg.get('updated')
         files=[]
         for file in os.scandir(self.path):
@@ -121,7 +121,7 @@ class Watch(threading.Thread):
                     age=time.time()-file.stat().st_mtime
                     if (minage and age < minage) or (maxage and age > maxage): continue
                 files.append(file)
-            except Exception as e: self.logger.warning('%s %s'%(file.name,e)) #can't access?
+            except Exception as e: self.logger.warning('%s %s',file.name,e) #can't access?
         self.__cache=sorted(files,key=lambda file:file.name,reverse=(not self.cfg.get('reverse',False)))
         return len(self.__cache)
 
@@ -151,18 +151,18 @@ class Watch(threading.Thread):
                         if job.multi: #this is a multi-node job, we don't have a single state
                             #if any job failed, kill and restart the multi-job
                             if any(j.get('state')=='failed' for j in job.poll().values()): 
-                                self.logger.warning('job %s failed'%jid)
+                                self.logger.warning('job %s failed',jid)
                                 job.kill() #stop the remaining parts so it can be restarted
                                 done=False
                         elif job.state != 'done': 
-                            self.logger.warning('job %s %s'%(jid,job.state))
+                            self.logger.warning('job %s %s',jid,job.state)
                             done=False
                         if not job.is_alive():
                             if '_' in jid: #set file status if this job is for a file
                                 index,filename=jid.split('_',2)
                                 try: self.set_file_status(index,filename,job.poll())
                                 #file was probably deleted, just log it
-                                except Exception as e: self.logger.warning('%s %s'%(filename,e))
+                                except Exception as e: self.logger.warning('%s %s',filename,e)
                             del self.__jobs[jid]
                             #if no failure and all jobs have exited
                             if not self.__jobs and done is None: done=True 
@@ -178,13 +178,13 @@ class Watch(threading.Thread):
                     if not rescan_count: #scan files
                         try: 
                             n=self.rescan_path()
-                            self.logger.debug('%s: %s files'%(self.path,n))
+                            self.logger.debug('%s: %s files',self.path,n)
                         except Exception as e: self.logger.warning(e)
 
                         #build lists
                         for glob in globs:
                             self.__files[glob]=[file for file in self.__cache if fnmatch.fnmatch(file.name,glob)]
-                            self.logger.debug('%s: %s files'%(glob,len(self.__files[glob])))
+                            self.logger.debug('%s: %s files',glob,len(self.__files[glob]))
 
                         #build filesets
                         for glob_index,glob in enumerate(globs): #list index (index of glob->file list)
@@ -208,12 +208,12 @@ class Watch(threading.Thread):
                                     if skip:
                                         skip_fileset=self.check_file_skip(mpat,split,skip)
                                         if skip_fileset:
-                                            self.logger.debug('%s exists, skip fileset %s'%(skip_fileset, mpat))
+                                            self.logger.debug('%s exists, skip fileset %s',skip_fileset, mpat)
                                             continue
-                                    self.logger.debug('fileset match %s: %s %s'%(mpat,fileset,fileset_complete))
+                                    self.logger.debug('fileset match %s: %s %s',mpat,fileset,fileset_complete)
                                 else: fileset=[file] #not match mode, single file set
                                 filesets.append(fileset) #this fileset can be processed 
-                            self.logger.debug('%s filesets to check'%len(filesets))
+                            self.logger.debug('%s filesets to check',len(filesets))
 
                             #check status and start jobs
                             for file_index,fileset in enumerate(filesets):
@@ -225,7 +225,7 @@ class Watch(threading.Thread):
                                 else: min_index=job_index
                                 for index in range(min_index,job_index+1): 
                                     if not jobs[index]: 
-                                        self.logger.debug ("No job at index %s for %s"%(index,fileset))
+                                        self.logger.debug ("No job at index %s for %s",index,fileset)
                                         continue #no job for this index, skip it.
                                     #check file status
                                     try: 
@@ -237,12 +237,12 @@ class Watch(threading.Thread):
                                         if not status and not self.cfg.get('retry',True): 
                                             status=self.check_file_status(index,file,'failed')
                                     except Exception as e:
-                                        self.logger.warning("%s %s"%(file.name,e))
+                                        self.logger.warning("%s %s",file.name,e)
                                         status=True #skip this one it smells funny
                                     if not status: #if file is not running and not processed
                                         self.start_job(index,glob_index,file,fparts,fileset=[f.name for f in fileset])
                                         break #if run_all, don't start the next index job until this one is finished
-                                    self.logger.debug ("index %s job status %s for %s"%(index,status,fileset))
+                                    self.logger.debug ("index %s job status %s for %s",index,status,fileset)
                 
                 else: #just track job
                     for index in range(len(jobs)):
@@ -262,7 +262,7 @@ class Watch(threading.Thread):
 
         #kill all jobs and verify stop before exiting, to ensure client isn't disposed of before sync
         for jid,job in self.__jobs.items(): 
-            self.logger.info('killing job %s'%jid)
+            self.logger.info('killing job %s',jid)
             job.kill(True)
 
 try:
@@ -274,7 +274,7 @@ try:
         def set_file_status(self,index,filename,job=None,status=None):
             '''set the file processing status and last modified time attrs'''
             if job: status=job['state']
-            self.logger.debug('set %s %s %s'%(index,filename,status))
+            self.logger.debug('set %s %s %s',index,filename,status)
             attr='user.%s_%s'%(self.name,index)
             f=os.path.join(self.path,filename)
             if job: data=json.dumps(job).encode()

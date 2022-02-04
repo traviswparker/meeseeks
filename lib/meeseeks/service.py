@@ -84,7 +84,7 @@ class Meeseeks:
                 del pcfg['plugin']
             else: pool_class=Pool
             if p not in self.pools:
-                self.logger.info('creating %s %s'%(pool_class.POOL_TYPE,p))
+                self.logger.info('creating %s %s',pool_class.POOL_TYPE,p)
                 self.pools[p]=pool_class(self.name,p,self.state,**pcfg)
             else: self.pools[p].config(**pcfg)
 
@@ -96,7 +96,7 @@ class Meeseeks:
             if n==self.name: continue #we don't need to talk to ourself 
             ncfg={**self.defaults, **nodes[n]}
             if n not in self.nodes:
-                self.logger.info('adding node %s'%n)
+                self.logger.info('adding node %s',n)
                 self.nodes[n]=Node(self.name,n,self.state,**ncfg)
             else: self.nodes[n].config(**ncfg)
 
@@ -104,7 +104,7 @@ class Meeseeks:
     def stop_pool(self,p):
         pool=self.pools[p]
         pool.shutdown.set()
-        self.logger.info('stopping %s'%pool.name)
+        self.logger.info('stopping %s',pool.name)
         pool.join()
         del self.pools[p]
 
@@ -112,7 +112,7 @@ class Meeseeks:
     def stop_node(self,n):
         node=self.nodes[n]
         node.shutdown.set()
-        self.logger.info('stopping %s'%node.name)
+        self.logger.info('stopping %s',node.name)
         node.join()
         del self.nodes[n]
         self.state.update_node(n,online=False,remove=True)
@@ -143,7 +143,7 @@ class Meeseeks:
     
     def select_by_available(self,pool_status,nodes):
         #get nodes in this pool sorted from most to least open slots
-        #exclude nodes in pool with no free slots unless we have no free slots
+        #exclude nodes in pool with no free or unlimited slots unless we have no free slots
         nodes_slots=[ (pool_status[node], node) for node in nodes if \
             (pool_status[node]>0 and pool_status[node] is not True) ]
         #do we have any nodes with pool slots?
@@ -178,7 +178,7 @@ class Meeseeks:
                 self.listener.server_thread=threading.Thread(target=self.listener.serve_forever)
                 self.listener.server_thread.daemon=True
                 self.listener.server_thread.start()
-                self.logger.info('listening on %s:%s'%self.listener.server_address)
+                self.logger.info('listening on %s:%s',*self.listener.server_address)
 
             self.restart.clear() #startup finished, clear event
             
@@ -196,7 +196,7 @@ class Meeseeks:
                     #handle config jobs assigned to us
                     for jid,job in self.state.get(node=self.name,pool='__config').items():
                         if job['state'] == 'new':
-                            self.logger.info('got config %s: %s'%(jid,job['args']))
+                            self.logger.info('got config %s: %s',jid,job['args'])
                             if job['args']: #if changes were pushed
                                 self.cfg.update(job['args'])
                                 self.restart.set() #main loop breaks and apply_config is called
@@ -222,12 +222,14 @@ class Meeseeks:
                             pool_status=self.state.get_pools().get(pool,{})
                             #we need to select nodes:
                             # with open slots (slots > 0)
-                            # or full (slots is < 1) but jobs can wait
+                            # or full (slots is < 1) 
                             # or without defined slots (slots is True)
+                            # or we are configured to assign jobs to full nodes
                             nodes=[node for node,free_slots in pool_status.items() if \
                                 free_slots > 0 or self.cfg.get('wait_in_pool')]
 
                             #if no nodes or job in hold, we can't route this job yet
+                            #unless we are confirured to assign to full
                             if not nodes or (job.get('hold') and not self.cfg.get('wait_in_pool')):
                                 #assign to us for now
                                 if not job['node']: self.state.update_job(jid,node=self.name) 
@@ -238,7 +240,7 @@ class Meeseeks:
                             else: node=self.select_by_available(pool_status,nodes)
 
                             #assign the job
-                            self.logger.info('assign %s to %s@%s'%(jid,pool,node))
+                            self.logger.info('assign %s to %s@%s',jid,pool,node)
                             self.state.update_job(jid,node=node)
                             
                         except Exception as e: self.logger.warning(e,exc_info=True)
@@ -256,7 +258,7 @@ class Meeseeks:
 
         #stop state manager
         self.state.shutdown.set()
-        self.logger.info('stopping %s'%self.state.name)
+        self.logger.info('stopping %s',self.state.name)
         self.state.join()   
 
         #stop listening
@@ -296,7 +298,7 @@ class Meeseeks:
         if 'config' in request:
             cfg=request['config']
             if cfg: #if changes were pushed
-                self.logger.info('got config request: %s'%cfg)
+                self.logger.info('got config request: %s',cfg)
                 self.cfg.update(request['config'])
                 self.restart.set() #main loop breaks and apply_config is called
             response['config']=self.cfg.copy()

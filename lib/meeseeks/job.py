@@ -48,6 +48,8 @@ class Job():
         #set the self.info attrubute, this will be the cache of job state
         if args: kwargs.update(args=list(args))
         self.info=dict((k,v) for (k,v) in kwargs.items() if k in State.JOB_SPEC)
+        #set default environment if not already set
+        self.info.setdefault('env',os.environ)
 
         #detect multi-submit job
         if 'node' in self.info and \
@@ -141,7 +143,7 @@ class Notify(threading.Thread):
         self.start()
 
     def run(self):
-        self.logger.debug('%s started'%self.name)
+        self.logger.debug('%s started',self.name)
         while True:
             with self.__lock:
                 for job in self.__jobs:
@@ -152,21 +154,21 @@ class Notify(threading.Thread):
                         #for each exited job, notify and mark as notified
                         for jid in exited:
                             if job.notify and jid not in job.notified:
-                                self.logger.debug('%s notify'%jid)
+                                self.logger.debug('%s notify',jid)
                                 job.notify(job) #callback with job object
                                 job.notified.add(jid)
                         if not job.is_alive(): #if multi some jobs may still be alive
-                            self.logger.debug('removing %s'%job)
+                            self.logger.debug('removing %s',job)
                             self.__jobs.remove(job)
                             break #set size changed
             time.sleep(1)
 
     def add(self,job):
-        self.logger.debug('adding %s'%job)
+        self.logger.debug('adding %s',job)
         job.notified=set()
         with self.__lock: self.__jobs.add(job)
 
     def remove(self,job):
-        self.logger.debug('removing %s'%job)
+        self.logger.debug('removing %s',job)
         with self.__lock: 
             if job in self.__jobs: self.__jobs.remove(job)

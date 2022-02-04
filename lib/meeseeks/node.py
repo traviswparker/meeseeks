@@ -42,7 +42,7 @@ class Node(threading.Thread):
         with self.__lock:
             #connect and send/recieve request/response
             if not self.__socket:
-                self.logger.debug('connecting to %s:%s'%(self.address,self.port))
+                self.logger.debug('connecting to %s:%s',self.address,self.port)
                 try: 
                     self.__socket=socket.create_connection((self.address,self.port),timeout=self.timeout)
                     if 'ssl' in self.cfg:
@@ -52,7 +52,7 @@ class Node(threading.Thread):
                     if self.__socket is not False:
                         self.logger.warning(e)
                         self.__socket=False #suppress repeated warnings
-                if self.__socket: self.logger.info('connected to %s:%s'%(self.address,self.port))
+                if self.__socket: self.logger.info('connected to %s:%s',self.address,self.port)
             if self.__socket:
                 try:
                     self.__socket.sendall(json.dumps(requests).encode())
@@ -60,7 +60,7 @@ class Node(threading.Thread):
                     l=''
                     while True:
                         d=self.__socket.recv(65535).decode()
-                        if not d: raise Exception('disconnected from %s:%s'%(self.address,self.port))
+                        if not d: raise Exception('disconnected from %s:%s',self.address,self.port)
                         l+=d
                         if '\n' in l: return json.loads(l)
                 except Exception as e: 
@@ -108,8 +108,8 @@ class Node(threading.Thread):
                 status=response.get('nodes',{})
                 updated=self.state.sync(jobs,status,remote_node=self.remote_node)
                 if sync or updated:
-                    self.logger.debug('%s sent %s, updated %s, local_seq %s, remote_seq %s'%
-                        (time.time(),len(sync),len(updated),local_seq,remote_seq)    )
+                    self.logger.debug('%s sent %s, updated %s, local_seq %s, remote_seq %s',
+                        time.time(),len(sync),len(updated),local_seq,remote_seq)    
                 #toggle the sync Event to signal anything waiting for sync
                 self.sync.set()
                 self.sync.clear()

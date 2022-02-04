@@ -15,14 +15,15 @@ class State(threading.Thread):
             gid: [optional] groupid of the job
             pool: <required> the pool the job runs in
             args: <required> list of [ arg0 (executable) [,arg1,arg2,...] ] (command line for job)
+            env: [optional] environment for job, usually set to dict(os.environ) by client
             node: [optional] node to run on, job will fail if unavailable
             filter: [optional] pattern to match nodename against, to set preferred nodes
             stdin: filename to redirect stdin from
             stdout: filename to redirect stdout to
             stderr: filename to redirect stderr to
-            restart: if true, job will be restarted on same node when done
-            retries: count of times to restart a failed job on same node
-            resubmit: if true, when job is finished (done or failed), resubmit it to the submit_node
+            restart: if true, job will be restarted when done
+            retries: count of times to restart a failed job
+            resubmit: if true, when job is restarted/retried, send back to the submit_node vs. restarting locally 
             runtime: job maximum runtime in seconds. job will be killed and marked as failed if exceeded.
             hold: if true, job will not run until cleared
             config: job task configuration dict. for Task spawned by Pool, sets popen args.
@@ -54,6 +55,7 @@ class State(threading.Thread):
                 'gid',
                 'pool',
                 'args',
+                'env',
                 'state',
                 'node',
                 'filter',
@@ -100,7 +102,7 @@ class State(threading.Thread):
             if checkpoint is not None: self.checkpoint=checkpoint
             if history:
                 try: self.hist_fh=open(history,'a')
-                except Exception as e: self.logger.warning('%s:%s'%(history,e))
+                except Exception as e: self.logger.warning('%s:%s',history,e)
             elif self.hist_fh: 
                 self.hist_fh.close()
                 self.hist_fh=None
@@ -116,16 +118,16 @@ class State(threading.Thread):
             try:
                 with open(self.state_file,'w') as fh: 
                     json.dump(self.__jobs,fh)
-                    self.logger.info('saved state to %s'%self.state_file)
-            except Exception as e: self.logger.warning('%s:%s'%(self.state_file,e))
+                    self.logger.info('saved state to %s',self.state_file)
+            except Exception as e: self.logger.warning('%s:%s',self.state_file,e)
 
     def __load_state(self):
         if self.state_file:
             try:
                 with open(self.state_file) as fh: 
                     self.__jobs=json.load(fh)
-                    self.logger.info('loaded state from %s'%self.state_file)
-            except Exception as e: self.logger.warning('%s:%s'%(self.state_file,e)) 
+                    self.logger.info('loaded state from %s',self.state_file)
+            except Exception as e: self.logger.warning('%s:%s',self.state_file,e)
 
     #these return a copy of the state, use update_ methods to modify it
 
@@ -308,6 +310,7 @@ class State(threading.Thread):
                             }
                     job.update(**jobargs)
                     self.__update_job(jid,**job)
+                    self.logger.info('submit job %s',jid)
                     r[jid]=job.copy()
 
             except Exception as e: self.logger.warning(e,exc_info=True)
@@ -334,47 +337,52 @@ class State(threading.Thread):
                         if time.time()-job['ts'] > self.expire: 
                             #jobs that have ended will no longer be updated, so expire them.
                             if job['state'] in self.JOB_INACTIVE:
-                                self.logger.debug('expiring inactive job %s'%jid)
+                                self.logger.debug('expiring inactive job %s',jid)
                                 del self.__jobs[jid]
                             #if we expire active jobs and the job's node is down
                             elif self.expire_active_jobs and not nodes.get(job.get('node'),{}).get('online'):
                                 #this job *should* have been updated by the node
-                                self.logger.warning('expiring active job %s on %s'%(jid,job.get('node')))
+                                self.logger.warning('expiring active job %s on %s',jid,job.get('node'))
                                 #set job to failed
                                 self.__update_job(jid,state='failed',error='expired',fail_count=job.get('fail_count',0)+1)
                             #bump the timestamp on the job to ensure it has been forwarded to the proper node
                             else: self.__update_job(jid)
                             
-                    #scan for jobs to restart/retry/resubmit
+                    #scan for recurring jobs
                     for jid,job in self.__jobs.items():
-                        #if we restart and this job is done, reset to new
-                        if job.get('restart') and job['state'] == 'done' \
-                            and self.node and job.get('node')==self.node:
-                                self.logger.info('restart job %s'%(jid))
-                                self.__update_job(jid,state='new')
-                        #if we retry on fail, reset the job and keep on this node
-                        elif job.get('retries') and job['state'] == 'failed' \
-                            and job.get('fail_count') <= job.get('retries',0):
-                                self.logger.info('retry job %s (%s of %s)'%(jid,job.get('fail_count'),job.get('retries')))
-                                self.__update_job(jid,state='new')
-                        #if we resubmit finished jobs and job was not killed, reset it but only if we are the submit node
-                        elif job.get('resubmit') and not job.get('active') \
-                            and job['state'] not in ['new','killed'] \
-                            and self.node and job.get('submit_node') == self.node:
-                                self.logger.info('resubmit job %s'%(jid))
-                                self.__update_job(jid,
-                                fail_count=0,start_count=0,
-                                submit_ts=time.time(),
-                                state='new',node=self.node)
+                        #resubmit kicks done/fail jobs back to the submit node for pool reassignment
+                        #is this our job (assigned to us and not set to resubmit)
+                        this_node=( self.node and job.get('node')==self.node ) and not job.get('resubmit') #job on this node
+                        #resubmittable and not claimed 
+                        #and not new or killed 
+                        #and we are the node that will resubmit it
+                        resubmit=(  job.get('resubmit') and not job.get('active') \
+                                    and job['state'] not in ['new','killed'] \
+                                    and (self.node and job.get('submit_node') == self.node) )
+                        if resubmit or this_node: #only check jobs we may be restarting/resubmitting
+                            restart=False
+                            #if we restart and this job is done
+                            if job.get('restart') and job['state'] == 'done': restart=True
+                            #if we retry on fail and we have retries remaining
+                            elif job['state'] == 'failed' and job.get('fail_count') <= job.get('retries',0):
+                                self.logger.info('retry job %s (%s of %s)',jid,job.get('fail_count'),job.get('retries'))
+                                restart=True
+                            if restart: 
+                                if resubmit: #claim this job to resubmit it 
+                                    self.logger.info('resubmit job %s',jid)
+                                    self.__update_job(jid, submit_ts=time.time(), state='new', node=self.node)
+                                else: #restart locally 
+                                    self.logger.info('restart job %s',jid)
+                                    self.__update_job(jid, state='new')
 
                     #set nodes that have not sent status to offline
                     for node,node_status in nodes.items():
                         if time.time()-node_status.get('ts',0) > self.timeout:
                             if node_status.get('online'):
-                                self.logger.warning('node %s not updated in %s seconds'%(node,self.timeout))
+                                self.logger.warning('node %s not updated in %s seconds',node,self.timeout)
                                 self.__update_node(node,online=False)
                             elif node_status.get('remove'): #offline node is marked for upstream removal
-                                self.logger.info('removing node %s' %node)
+                                self.logger.info('removing node %s',node)
                                 del self.__status[node]
 
                 except Exception as e: self.logger.warning(e,exc_info=True)

@@ -1,20 +1,18 @@
 #!/bin/bash
 
-cfg='user=nobody'
+meeseeks-box user=nobody master.cfg &
 
-meeseeks-box $cfg master.cfg &
+meeseeks-box user=nobody headA1.cfg &
+meeseeks-box user=nobody headB1.cfg &
+meeseeks-box user=nobody headA2.cfg &
+meeseeks-box user=nobody headB2.cfg &
 
-meeseeks-box $cfg headA1.cfg &
-meeseeks-box $cfg headB1.cfg &
-meeseeks-box $cfg headA2.cfg &
-meeseeks-box $cfg headB2.cfg &
+meeseeks-box user=nobody nodeA1.cfg &
+meeseeks-box user=nobody nodeA2.cfg &
+meeseeks-box user=nobody nodeA3.cfg &
 
-meeseeks-box $cfg nodeA1.cfg &
-meeseeks-box $cfg nodeA2.cfg &
-meeseeks-box $cfg nodeA3.cfg &
-
-meeseeks-box $cfg nodeB1.cfg &
-meeseeks-box $cfg nodeB2.cfg &
-meeseeks-box $cfg nodeB3.cfg &
+meeseeks-box user=nobody nodeB1.cfg &
+meeseeks-box user=nobody nodeB2.cfg &
+meeseeks-box user=nobody nodeB3.cfg &
 
 while true; do sleep 1; done

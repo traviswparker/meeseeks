@@ -4,6 +4,7 @@ from multiprocessing import Process, Manager
 import subprocess
 import base64
 import os
+import logging
 from meeseeks.util import *
 
 '''PLUGIN API
@@ -30,13 +31,14 @@ from meeseeks.util import *
 class Task(Process):
     '''subprocess manager'''        
     def __init__(self,job):
-        self.job=job
-        self.info=Manager().dict() #info to update job
+        self.job=job #job spec for task
+        self.info=Manager().dict() #task info readable by pool
         #thread will wait on subprocess
         Process.__init__(self,target=self.__task_run)
         self.start() 
     
     def __task_run(self):
+        self.logger=logging.getLogger(self.name)
         uid,gid=os.geteuid(),os.getegid() #save current u/g
         try:
             popen_args={}
@@ -66,12 +68,24 @@ class Task(Process):
                 popen_args.update(stderr=stderr)
             else:
                 popen_args.update(stderr=subprocess.PIPE)
+
+            env=self.job.get('env',{}) #get environ as dict
+            #set meeseeks env vars
+            env.update(
+                MEESEEKS_JOB_ID=self.job.get('id',''),
+                MEESEEKS_POOL=self.job.get('pool'),
+                MEESEEKS_NODE=self.job.get('node'),
+                MEESEEKS_SUBMIT_NODE=self.job.get('submit_node'),
+                MEESEEKS_TAGS=','.join(t for t in self.job.get('tags',[]) if t is not None)
+            )
             
-            self.__sub=subprocess.Popen( self.job.get('args'), **popen_args)
+            #kick it! *guitar riff*
+            self.__sub=subprocess.Popen( self.job.get('args'), env=env, **popen_args)
 
             #back to the meeseeks user/group so we can talk to the Manager
             su(uid,gid)
             self.info['pid']=self.__sub.pid #set pid in job
+            self.logger.info('started pid %s',self.__sub.pid)
 
             # block here until process finishes
             stdout_data,stderr_data=self.__sub.communicate()
@@ -91,6 +105,7 @@ class Task(Process):
 
         except Exception as e:
             su(uid,gid) #back to meeseeks user
+            self.logger.warning(e,exc_info=True)
             self.info['error']=str(e)
 
     def kill(self,sig=9):
@@ -99,6 +114,7 @@ class Task(Process):
         #(we might need to switch back to root and then to the job user, 
         # and we don't want to change the euid/egid of the parent)
         pid=self.info.get('pid')
+        self.logger.info('killing pid %s',pid)
         if pid:
             subprocess.Popen( ['kill','-%s'%sig,'%s'%self.info['pid']], 
             stdout=subprocess.PIPE,stderr=subprocess.PIPE,
